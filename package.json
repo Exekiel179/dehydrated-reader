@@ -15,8 +15,9 @@
     "setup:crawl4ai": "powershell -ExecutionPolicy Bypass -File scripts/setup-crawl4ai.ps1",
     "setup:social-bridge": "powershell -ExecutionPolicy Bypass -File scripts/setup-social-bridge.ps1",
     "setup:auth-assistant": "powershell -ExecutionPolicy Bypass -File scripts/setup-auth-assistant.ps1",
+    "setup:yt-dlp": "powershell -ExecutionPolicy Bypass -File scripts/setup-yt-dlp.ps1",
     "setup:models": "tsx scripts/prewarm-models.ts",
-    "setup": "npm run setup:models && npm run setup:crawl4ai && npm run setup:social-bridge && npm run setup:auth-assistant"
+    "setup": "npm run setup:models && npm run setup:crawl4ai && npm run setup:social-bridge && npm run setup:auth-assistant && npm run setup:yt-dlp"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

@@ -36,6 +36,12 @@ const EMBEDDING_TIMEOUT_MS = Number(process.env.EMBEDDING_TIMEOUT_MS || 8000);
 const SOURCE_CACHE_TTL_MS = Number(process.env.SOURCE_CACHE_TTL_MS || 5 * 60 * 1000);
 const DEFAULT_WECHAT_CACHE_FILE = process.env.WECHAT_CACHE_FILE || 'F:\\Projects\\公众号文章爬虫\\wechat_spider\\wechat_spider\\wechat_cache.json';
 const WECHAT_BROWSER_PROFILE_DIR = path.join(PROJECT_ROOT, '.runtime', 'wechat-browser-profile');
+const VIDEO_DOWNLOAD_DIR = path.join(PROJECT_ROOT, '.runtime', 'video-downloads');
+const YTDLP_RUNTIME_ROOT = path.join(PROJECT_ROOT, '.runtime', 'yt-dlp');
+const YTDLP_VENV = path.join(YTDLP_RUNTIME_ROOT, '.venv');
+const YTDLP_PYTHON = process.platform === 'win32'
+  ? path.join(YTDLP_VENV, 'Scripts', 'python.exe')
+  : path.join(YTDLP_VENV, 'bin', 'python');
 
 type FetchMethod = DehydrateResponse['meta']['fetchMethod'];
 
@@ -177,6 +183,65 @@ function isWeChatArticleUrl(url: string) {
   } catch {
     return false;
   }
+}
+
+function isVideoUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host.includes('bilibili.com') ||
+      host.includes('youtube.com') ||
+      host.includes('youtu.be') ||
+      host.includes('vimeo.com') ||
+      host.includes('ixigua.com') ||
+      host.includes('douyin.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function runProcess(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }) {
+  return await new Promise<string>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options?.cwd || PROJECT_ROOT,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+      },
+    });
+    const timeout = options?.timeoutMs
+      ? setTimeout(() => {
+          child.kill();
+          reject(new Error(`${command} 执行超时。`));
+        }, options.timeoutMs)
+      : null;
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      reject(error);
+    });
+    child.on('close', (code) => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || stdout.trim() || `${command} 执行失败。`));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
 }
 
 function resolveAssetUrl(baseUrl: string, candidate?: string | null) {
@@ -1761,6 +1826,177 @@ async function fetchWithWeChat(url: string, settings?: SocialCrawlerSettings): P
   }
 }
 
+async function ensureYtDlpPython() {
+  if (process.env.YTDLP_PYTHON?.trim()) {
+    return process.env.YTDLP_PYTHON.trim();
+  }
+
+  try {
+    await runProcess('yt-dlp', ['--version'], { timeoutMs: 15000 });
+    return 'yt-dlp';
+  } catch {
+    // Fall through to project-local Python package.
+  }
+
+  try {
+    await fs.access(YTDLP_PYTHON);
+    return YTDLP_PYTHON;
+  } catch {
+    await fs.mkdir(YTDLP_RUNTIME_ROOT, { recursive: true });
+    const bootstrapPython = process.env.PYTHON_BOOTSTRAP || 'python';
+    await runProcess(bootstrapPython, ['-m', 'venv', YTDLP_VENV], { timeoutMs: 120000 });
+    await runProcess(YTDLP_PYTHON, ['-m', 'pip', 'install', '--upgrade', 'pip'], { timeoutMs: 120000 });
+    await runProcess(YTDLP_PYTHON, ['-m', 'pip', 'install', 'yt-dlp'], { timeoutMs: 180000 });
+    return YTDLP_PYTHON;
+  }
+}
+
+async function runYtDlp(args: string[], timeoutMs = 120000) {
+  const runner = await ensureYtDlpPython();
+  if (runner === 'yt-dlp') {
+    return runProcess('yt-dlp', args, { cwd: VIDEO_DOWNLOAD_DIR, timeoutMs });
+  }
+  return runProcess(runner, ['-m', 'yt_dlp', ...args], { cwd: VIDEO_DOWNLOAD_DIR, timeoutMs });
+}
+
+async function runYtDlpWithLoginFallback(args: string[], timeoutMs = 120000) {
+  try {
+    return await runYtDlp(args, timeoutMs);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/(412|403|login|sign in|cookie|cookies|forbidden|验证|登录|权限)/i.test(message)) {
+      throw error;
+    }
+    return runYtDlp(['--cookies-from-browser', 'chrome', ...args], timeoutMs);
+  }
+}
+
+function stripVttToText(raw: string) {
+  return raw
+    .replace(/^\uFEFF?WEBVTT[^\n]*\n/i, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^\d+$/.test(line) && !/-->/.test(line) && !/^NOTE\b/.test(line))
+    .map((line) =>
+      line
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    .filter(Boolean)
+    .filter((line, index, lines) => line !== lines[index - 1])
+    .join('\n');
+}
+
+async function findDownloadedSubtitle(videoDir: string) {
+  const files = await fs.readdir(videoDir).catch(() => []);
+  const subtitle = files.find((file) => /\.(zh-Hans|zh-Hant|zh|cmn|en)\.vtt$/i.test(file)) || files.find((file) => /\.vtt$/i.test(file));
+  return subtitle ? path.join(videoDir, subtitle) : '';
+}
+
+async function downloadVideoAudio(url: string, videoDir: string) {
+  await runYtDlpWithLoginFallback(
+    [
+      '--no-playlist',
+      '-f',
+      'bestaudio/best',
+      '--paths',
+      videoDir,
+      '-o',
+      '%(id)s.%(ext)s',
+      url,
+    ],
+    600000
+  );
+  const files = await fs.readdir(videoDir).catch(() => []);
+  return files
+    .map((file) => path.join(videoDir, file))
+    .find((file) => /\.(m4a|mp3|webm|opus|wav|mp4)$/i.test(file));
+}
+
+async function fetchWithYtDlp(url: string): Promise<SourceDocument> {
+  await fs.mkdir(VIDEO_DOWNLOAD_DIR, { recursive: true });
+  const metadataRaw = await runYtDlpWithLoginFallback(['--dump-json', '--no-playlist', url], 120000);
+  const metadata = JSON.parse(metadataRaw) as {
+    id?: string;
+    title?: string;
+    description?: string;
+    duration_string?: string;
+    duration?: number;
+    uploader?: string;
+    thumbnail?: string;
+    webpage_url?: string;
+  };
+  const videoId = (metadata.id || crypto.createHash('sha1').update(url).digest('hex').slice(0, 12)).replace(/[^\w-]/g, '');
+  const videoDir = path.join(VIDEO_DOWNLOAD_DIR, videoId);
+  await fs.mkdir(videoDir, { recursive: true });
+
+  await runYtDlpWithLoginFallback(
+    [
+      '--write-sub',
+      '--write-auto-sub',
+      '--sub-langs',
+      'zh-Hans,zh-Hant,zh,cmn,en',
+      '--sub-format',
+      'vtt',
+      '--convert-subs',
+      'vtt',
+      '--skip-download',
+      '--no-playlist',
+      '--paths',
+      videoDir,
+      '-o',
+      '%(id)s.%(ext)s',
+      url,
+    ],
+    180000
+  ).catch(() => '');
+
+  const subtitlePath = await findDownloadedSubtitle(videoDir);
+  if (!subtitlePath) {
+    const audioPath = await downloadVideoAudio(url, videoDir).catch(() => '');
+    throw new Error(
+      audioPath
+        ? `视频没有可用字幕，已下载音频到 ${audioPath}。下一步需要接入 Whisper/faster-whisper 转写后再脱水。`
+        : '视频没有可用字幕，且音频下载失败。请检查 yt-dlp、登录状态或视频权限。'
+    );
+  }
+
+  const transcript = stripVttToText(await fs.readFile(subtitlePath, 'utf8'));
+  if (transcript.replace(/\s+/g, '').length < 80) {
+    throw new Error('视频字幕内容过短，无法可靠脱水。');
+  }
+
+  const duration = metadata.duration_string || (metadata.duration ? `${Math.round(metadata.duration / 60)} 分钟` : '未知时长');
+  const markdown = stripMarkdownNoise(
+    [
+      `# ${metadata.title || '视频'}`,
+      metadata.uploader ? `UP 主 / 作者：${metadata.uploader}` : '',
+      `视频时长：${duration}`,
+      metadata.description ? `简介：${metadata.description.slice(0, 800)}` : '',
+      '## 字幕转写',
+      transcript,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  );
+
+  return {
+    url: metadata.webpage_url || url,
+    title: metadata.title || url,
+    markdown,
+    excerpt: metadata.description?.slice(0, 180) || transcript.slice(0, 180),
+    fetchMethod: 'yt-dlp',
+    sourceType: 'video',
+    coverImageUrl: metadata.thumbnail,
+  };
+}
+
 async function fetchWithCrawl4AI(url: string): Promise<SourceDocument | null> {
   const scriptPath = path.join(PROJECT_ROOT, 'server', 'crawl4ai_fetch.py');
   const pythonCandidates = [
@@ -2012,7 +2248,7 @@ async function expandSourceWithSubpages(source: SourceDocument, profile?: AiProf
 }
 
 async function fetchSourceDocument(url: string, profile?: AiProfile | null, socialCrawlerSettings?: SocialCrawlerSettings) {
-  const methodHint = isWeChatArticleUrl(url) ? 'wechat' : '';
+  const methodHint = isWeChatArticleUrl(url) ? 'wechat' : isVideoUrl(url) ? 'yt-dlp' : '';
   const cached = readCachedSourceDocument(url, profile, methodHint);
   if (cached) {
     return cached;
@@ -2024,6 +2260,12 @@ async function fetchSourceDocument(url: string, profile?: AiProfile | null, soci
   if (isWeChatArticleUrl(url)) {
     source = await fetchWithWeChat(url, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile, 'wechat');
+    return source;
+  }
+
+  if (isVideoUrl(url)) {
+    source = await fetchWithYtDlp(url);
+    writeCachedSourceDocument(source, profile, 'yt-dlp');
     return source;
   }
 

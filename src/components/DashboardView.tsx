@@ -466,7 +466,7 @@ export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelect
               >
                 <input
                   type="text"
-                  placeholder="粘贴链接（YouTube、公众号、PDF 链接等）"
+                  placeholder="粘贴链接（B站、YouTube、公众号、PDF 链接等）"
                   value={sourceInput}
                   onChange={(event) => setSourceInput(event.target.value)}
                   disabled={isSubmitting}
