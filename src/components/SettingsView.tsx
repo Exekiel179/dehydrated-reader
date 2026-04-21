@@ -1059,6 +1059,88 @@ export function SettingsView({
           </div>
         </div>
 
+        <div className="mt-6 rounded-lg border border-outline-variant/16 bg-surface-container-lowest p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">抓取代理池</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <label className="space-y-2">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">代理模式</span>
+              <select
+                className="w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                onChange={(event) => setSocialDraft((current) => ({ ...current, proxyMode: event.target.value as typeof current.proxyMode }))}
+                value={socialDraft.proxyMode}
+              >
+                <option value="off">关闭</option>
+                <option value="fixed">固定代理</option>
+                <option value="pool">代理池</option>
+              </select>
+            </label>
+
+            <label className="space-y-2">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">作用范围</span>
+              <select
+                className="w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                onChange={(event) => setSocialDraft((current) => ({ ...current, proxyScope: event.target.value as typeof current.proxyScope }))}
+                value={socialDraft.proxyScope}
+              >
+                <option value="wechat">仅公众号</option>
+                <option value="crawl4ai">仅 Crawl4AI</option>
+                <option value="readability">仅本地 Readability</option>
+                <option value="firecrawl">仅 Firecrawl 接口</option>
+                <option value="all">全部抓取链路</option>
+              </select>
+            </label>
+
+            <label className="flex items-start gap-3 rounded-lg border border-outline-variant/16 bg-surface px-4 py-3">
+              <input
+                checked={socialDraft.proxyStickySession}
+                className="mt-1 h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
+                onChange={(event) => setSocialDraft((current) => ({ ...current, proxyStickySession: event.target.checked }))}
+                type="checkbox"
+              />
+              <span>
+                <span className="block text-sm font-bold text-on-surface">同一链接固定代理</span>
+                <span className="mt-1 block text-xs leading-6 text-on-surface-variant">公众号建议开启，避免登录态和出口 IP 频繁变化。</span>
+              </span>
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">固定代理</span>
+              <input
+                className="w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                onChange={(event) => setSocialDraft((current) => ({ ...current, proxyUrl: event.target.value }))}
+                placeholder="http://user:pass@host:port"
+                value={socialDraft.proxyUrl}
+              />
+            </label>
+
+            <label className="space-y-2">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">代理列表下载 URL</span>
+              <input
+                className="w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                onChange={(event) => setSocialDraft((current) => ({ ...current, proxyListUrl: event.target.value }))}
+                placeholder="Webshare / ProxyScrape / Geonode 的 txt 下载地址"
+                value={socialDraft.proxyListUrl}
+              />
+              <p className="text-xs leading-6 text-on-surface-variant">包含 token 的 URL 只保存在本机设置里，不会提交到 Git。</p>
+            </label>
+          </div>
+
+          <label className="mt-4 block space-y-2">
+            <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">手动代理列表</span>
+            <textarea
+              className="min-h-28 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              onChange={(event) => setSocialDraft((current) => ({ ...current, proxyList: event.target.value }))}
+              placeholder={'每行一个，例如：\nhttp://user:pass@host:port\nhost:port:user:pass\nhost:port'}
+              value={socialDraft.proxyList}
+            />
+            <p className="text-xs leading-6 text-on-surface-variant">
+              免费代理建议只放在这里做候选，不要用于需要账号登录的公众号链路；质量和安全性都不可控。
+            </p>
+          </label>
+        </div>
+
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-outline-variant/16 pt-6">
           <p className="max-w-3xl text-sm leading-7 text-on-surface-variant">
             小红书和抖音会优先使用这里填写的 cookie；公众号会优先使用这里填写的 token/cookie，再回退到 `wechat_cache.json`。另外，XHS / 抖音若缺少 Node 依赖，桥接层会尝试自动安装。

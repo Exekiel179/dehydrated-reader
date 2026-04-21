@@ -55,6 +55,12 @@ const DEFAULT_SOCIAL_CRAWLER_SETTINGS: SocialCrawlerSettings = {
   crawlSubpages: false,
   crawlMaxDepth: 1,
   crawlMaxPages: 6,
+  proxyMode: 'off',
+  proxyScope: 'wechat',
+  proxyUrl: '',
+  proxyListUrl: '',
+  proxyList: '',
+  proxyStickySession: true,
 };
 
 function normalizeUserProfile(user: Partial<typeof currentUser> | null | undefined) {
@@ -83,6 +89,12 @@ function normalizeSocialCrawlerSettings(settings: Partial<SocialCrawlerSettings>
     crawlSubpages: Boolean(settings?.crawlSubpages),
     crawlMaxDepth: Math.max(1, Math.min(3, Number(settings?.crawlMaxDepth || DEFAULT_SOCIAL_CRAWLER_SETTINGS.crawlMaxDepth))),
     crawlMaxPages: Math.max(1, Math.min(24, Number(settings?.crawlMaxPages || DEFAULT_SOCIAL_CRAWLER_SETTINGS.crawlMaxPages))),
+    proxyMode: settings?.proxyMode || DEFAULT_SOCIAL_CRAWLER_SETTINGS.proxyMode,
+    proxyScope: settings?.proxyScope || DEFAULT_SOCIAL_CRAWLER_SETTINGS.proxyScope,
+    proxyUrl: settings?.proxyUrl || '',
+    proxyListUrl: settings?.proxyListUrl || '',
+    proxyList: settings?.proxyList || '',
+    proxyStickySession: settings?.proxyStickySession !== false,
   };
 }
 

@@ -4,6 +4,8 @@ export type AccentPreset = 'theme' | 'jade' | 'berry' | 'cobalt' | 'copper';
 
 export type InterfaceMode = 'anthropic-messages';
 export type FetchProvider = 'crawl4ai' | 'firecrawl' | 'readability';
+export type ProxyMode = 'off' | 'fixed' | 'pool';
+export type ProxyScope = 'all' | 'wechat' | 'crawl4ai' | 'readability' | 'firecrawl';
 
 export interface HydrationSnapshot {
   waterPercent: number;
@@ -98,6 +100,12 @@ export interface SocialCrawlerSettings {
   crawlSubpages: boolean;
   crawlMaxDepth: number;
   crawlMaxPages: number;
+  proxyMode: ProxyMode;
+  proxyScope: ProxyScope;
+  proxyUrl: string;
+  proxyListUrl: string;
+  proxyList: string;
+  proxyStickySession: boolean;
 }
 
 export interface PromptSettings {

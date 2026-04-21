@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import TurndownService from 'turndown';
+import { ProxyAgent } from 'undici';
 import type {
   AiProfile,
   Analysis,
@@ -202,12 +203,13 @@ function isVideoUrl(url: string) {
   }
 }
 
-async function runProcess(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }) {
+async function runProcess(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv }) {
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options?.cwd || PROJECT_ROOT,
       env: {
         ...process.env,
+        ...options?.env,
         PYTHONIOENCODING: 'utf-8',
       },
     });
@@ -254,6 +256,111 @@ function resolveAssetUrl(baseUrl: string, candidate?: string | null) {
   } catch {
     return undefined;
   }
+}
+
+type ProxyScope = NonNullable<SocialCrawlerSettings['proxyScope']>;
+
+const proxyListCache = new Map<string, { expiresAt: number; proxies: string[] }>();
+
+function normalizeProxyUrl(raw: string) {
+  const value = raw.trim();
+  if (!value || value.startsWith('#')) {
+    return '';
+  }
+  if (/^(https?|socks[45]?):\/\//i.test(value)) {
+    return value;
+  }
+
+  const colonParts = value.split(':');
+  if (colonParts.length === 4 && /^\d+$/.test(colonParts[1])) {
+    const [host, port, username, password] = colonParts;
+    return `http://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`;
+  }
+
+  return `http://${value}`;
+}
+
+function parseProxyList(raw: string) {
+  return raw
+    .split(/\r?\n|,/)
+    .map(normalizeProxyUrl)
+    .filter(Boolean);
+}
+
+function shouldUseProxy(settings: SocialCrawlerSettings | undefined, scope: ProxyScope) {
+  if (!settings || settings.proxyMode === 'off') {
+    return false;
+  }
+  return settings.proxyScope === 'all' || settings.proxyScope === scope;
+}
+
+async function loadProxyListFromUrl(url: string) {
+  const cache = proxyListCache.get(url);
+  if (cache && cache.expiresAt > Date.now()) {
+    return cache.proxies;
+  }
+
+  const response = await fetch(url, {
+    headers: {
+      'user-agent': 'DehydratedReader/1.0',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`代理列表下载失败：${response.status}`);
+  }
+  const proxies = parseProxyList(await response.text());
+  proxyListCache.set(url, {
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    proxies,
+  });
+  return proxies;
+}
+
+async function resolveProxyForScope(settings: SocialCrawlerSettings | undefined, scope: ProxyScope, seed: string) {
+  const envProxy = process.env.CRAWLER_PROXY_URL || '';
+  const envProxyListUrl = process.env.CRAWLER_PROXY_LIST_URL || '';
+  if (!shouldUseProxy(settings, scope) && !envProxy && !envProxyListUrl) {
+    return '';
+  }
+
+  const candidates: string[] = [];
+  if (settings?.proxyMode === 'fixed') {
+    candidates.push(normalizeProxyUrl(settings.proxyUrl || ''));
+  } else if (settings?.proxyMode === 'pool') {
+    candidates.push(...parseProxyList(settings.proxyList || ''));
+    if (settings.proxyListUrl?.trim()) {
+      candidates.push(...await loadProxyListFromUrl(settings.proxyListUrl.trim()).catch(() => []));
+    }
+  }
+  if (envProxy) {
+    candidates.push(normalizeProxyUrl(envProxy));
+  }
+  if (envProxyListUrl) {
+    candidates.push(...await loadProxyListFromUrl(envProxyListUrl).catch(() => []));
+  }
+
+  const proxies = [...new Set(candidates.filter(Boolean))];
+  if (!proxies.length) {
+    return '';
+  }
+
+  if (settings?.proxyStickySession !== false) {
+    const hash = crypto.createHash('sha1').update(seed).digest();
+    return proxies[hash[0] % proxies.length];
+  }
+  return proxies[Math.floor(Math.random() * proxies.length)];
+}
+
+async function fetchWithProxy(input: string | URL, init: RequestInit, settings: SocialCrawlerSettings | undefined, scope: ProxyScope) {
+  const proxy = await resolveProxyForScope(settings, scope, input.toString());
+  if (!proxy) {
+    return fetch(input, init);
+  }
+
+  return fetch(input, {
+    ...init,
+    dispatcher: new ProxyAgent(proxy),
+  } as RequestInit & { dispatcher: ProxyAgent });
 }
 
 function extractDocumentArtwork(document: Document, url: string) {
@@ -1575,12 +1682,12 @@ function serializeKnowledgeHits(hits: KnowledgeHit[]) {
     .join('\n');
 }
 
-async function fetchWithReadability(url: string): Promise<SourceDocument> {
-  const response = await fetch(url, {
+async function fetchWithReadability(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
+  const response = await fetchWithProxy(url, {
     headers: {
       'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36',
     },
-  });
+  }, settings, 'readability');
 
   if (!response.ok) {
     throw new Error(`抓取页面失败：${response.status}`);
@@ -1736,18 +1843,20 @@ function parseWechatHtml(url: string, html: string, cookieString: string): Sourc
   };
 }
 
-async function fetchWechatWithManualVerification(url: string, cookieString: string): Promise<SourceDocument> {
+async function fetchWechatWithManualVerification(url: string, cookieString: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
   await fs.mkdir(WECHAT_BROWSER_PROFILE_DIR, { recursive: true });
   let context: Awaited<ReturnType<(typeof import('playwright'))['chromium']['launchPersistentContext']>> | null = null;
 
   try {
     const { chromium } = await import('playwright');
+    const proxy = await resolveProxyForScope(settings, 'wechat', url);
     context = await chromium.launchPersistentContext(WECHAT_BROWSER_PROFILE_DIR, {
       headless: false,
       viewport: { width: 1280, height: 900 },
       userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 MicroMessenger/8.0.49',
       locale: 'zh-CN',
+      proxy: proxy ? { server: proxy } : undefined,
     });
 
     if (cookieString) {
@@ -1806,10 +1915,10 @@ async function fetchWechatWithManualVerification(url: string, cookieString: stri
 
 async function fetchWithWeChat(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
   const cookieString = await getWechatCookie(settings);
-  const response = await fetch(url, {
+  const response = await fetchWithProxy(url, {
     redirect: 'follow',
     headers: buildWechatRequestHeaders(cookieString),
-  });
+  }, settings, 'wechat');
 
   if (!response.ok) {
     throw new Error(`公众号文章抓取失败：${response.status} ${response.statusText}`);
@@ -1822,7 +1931,7 @@ async function fetchWithWeChat(url: string, settings?: SocialCrawlerSettings): P
     if (settings?.wechatManualVerify === false) {
       throw error;
     }
-    return fetchWechatWithManualVerification(url, cookieString);
+    return fetchWechatWithManualVerification(url, cookieString, settings);
   }
 }
 
@@ -1997,7 +2106,7 @@ async function fetchWithYtDlp(url: string): Promise<SourceDocument> {
   };
 }
 
-async function fetchWithCrawl4AI(url: string): Promise<SourceDocument | null> {
+async function fetchWithCrawl4AI(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument | null> {
   const scriptPath = path.join(PROJECT_ROOT, 'server', 'crawl4ai_fetch.py');
   const pythonCandidates = [
     process.env.CRAWL4AI_PYTHON,
@@ -2029,10 +2138,24 @@ async function fetchWithCrawl4AI(url: string): Promise<SourceDocument | null> {
     return null;
   }
 
+  const proxy = await resolveProxyForScope(settings, 'crawl4ai', url);
   let stdout = '';
   try {
     stdout = await new Promise<string>((resolve, reject) => {
-      const child = spawn(pythonPath, [scriptPath, url], { cwd: PROJECT_ROOT });
+      const child = spawn(pythonPath, [scriptPath, url], {
+        cwd: PROJECT_ROOT,
+        env: {
+          ...process.env,
+          ...(proxy
+            ? {
+                HTTP_PROXY: proxy,
+                HTTPS_PROXY: proxy,
+                CRAWL4AI_PROXY: proxy,
+              }
+            : {}),
+          PYTHONIOENCODING: 'utf-8',
+        },
+      });
 
       let output = '';
       let errorOutput = '';
@@ -2093,13 +2216,13 @@ async function fetchWithCrawl4AI(url: string): Promise<SourceDocument | null> {
   };
 }
 
-async function fetchWithFirecrawl(url: string, profile?: AiProfile | null): Promise<SourceDocument> {
+async function fetchWithFirecrawl(url: string, profile?: AiProfile | null, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
   const config = getFirecrawlConfig(profile);
   if (!config.apiKey) {
     throw new Error('Firecrawl Key 未填写。');
   }
 
-  const response = await fetch(`${config.baseUrl}/v2/scrape`, {
+  const response = await fetchWithProxy(`${config.baseUrl}/v2/scrape`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -2110,7 +2233,7 @@ async function fetchWithFirecrawl(url: string, profile?: AiProfile | null): Prom
       formats: ['markdown'],
       onlyMainContent: true,
     }),
-  });
+  }, settings, 'firecrawl');
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -2188,16 +2311,16 @@ function extractSameOriginLinks(source: SourceDocument, maxLinks: number) {
   return Array.from(links);
 }
 
-async function fetchSubpageDocument(url: string, profile?: AiProfile | null) {
+async function fetchSubpageDocument(url: string, profile?: AiProfile | null, settings?: SocialCrawlerSettings) {
   const provider = profile?.fetchProvider || 'crawl4ai';
   try {
     if (provider === 'firecrawl') {
-      return await fetchWithFirecrawl(url, profile);
+      return await fetchWithFirecrawl(url, profile, settings);
     }
     if (provider === 'readability') {
-      return await fetchWithReadability(url);
+      return await fetchWithReadability(url, settings);
     }
-    return (await fetchWithCrawl4AI(url)) || (await fetchWithReadability(url));
+    return (await fetchWithCrawl4AI(url, settings)) || (await fetchWithReadability(url, settings));
   } catch {
     return null;
   }
@@ -2220,7 +2343,7 @@ async function expandSourceWithSubpages(source: SourceDocument, profile?: AiProf
       continue;
     }
     visited.add(next.url);
-    const subpage = await fetchSubpageDocument(next.url, profile);
+    const subpage = await fetchSubpageDocument(next.url, profile, settings);
     if (!subpage?.markdown || subpage.markdown.replace(/\s+/g, '').length < 120) {
       continue;
     }
@@ -2270,25 +2393,25 @@ async function fetchSourceDocument(url: string, profile?: AiProfile | null, soci
   }
 
   if (provider === 'firecrawl') {
-    source = await expandSourceWithSubpages(await fetchWithFirecrawl(url, profile), profile, socialCrawlerSettings);
+    source = await expandSourceWithSubpages(await fetchWithFirecrawl(url, profile, socialCrawlerSettings), profile, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile);
     return source;
   }
 
   if (provider === 'readability') {
-    source = await expandSourceWithSubpages(await fetchWithReadability(url), profile, socialCrawlerSettings);
+    source = await expandSourceWithSubpages(await fetchWithReadability(url, socialCrawlerSettings), profile, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile);
     return source;
   }
 
-  const crawl4aiResult = await fetchWithCrawl4AI(url);
+  const crawl4aiResult = await fetchWithCrawl4AI(url, socialCrawlerSettings);
   if (crawl4aiResult?.markdown) {
     source = await expandSourceWithSubpages(crawl4aiResult, profile, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile);
     return source;
   }
 
-  source = await expandSourceWithSubpages(await fetchWithReadability(url), profile, socialCrawlerSettings);
+  source = await expandSourceWithSubpages(await fetchWithReadability(url, socialCrawlerSettings), profile, socialCrawlerSettings);
   writeCachedSourceDocument(source, profile);
   return source;
 }
