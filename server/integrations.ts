@@ -250,8 +250,23 @@ function extractImageFromHtml(value: string | undefined) {
   if (!value) {
     return undefined;
   }
-  const match = value.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i);
+  const match = value.match(/<img[^>]+(?:src|data-src|data-original)=["']([^"']+)["']/i);
   return match?.[1];
+}
+
+function normalizeImageUrl(value: string | undefined, baseUrl?: string) {
+  if (!value || /^data:/i.test(value)) {
+    return undefined;
+  }
+  try {
+    const normalized = baseUrl ? new URL(value, baseUrl).toString() : new URL(value).toString();
+    if (/(favicon|apple-touch-icon|sprite|logo)\b/i.test(normalized)) {
+      return undefined;
+    }
+    return normalized;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeUnknownMediaUrl(value: unknown): string | undefined {
@@ -295,17 +310,50 @@ function pickItemImage(item: {
   mediaThumbnail?: unknown;
   content?: string;
   contentEncoded?: string;
-}, feedImage?: string) {
+}, baseUrl?: string) {
   if (item.enclosure?.url && item.enclosure.type?.startsWith('image/')) {
-    return item.enclosure.url;
+    return normalizeImageUrl(item.enclosure.url, baseUrl);
   }
   return (
-    normalizeUnknownMediaUrl(item.mediaContent) ||
-    normalizeUnknownMediaUrl(item.mediaThumbnail) ||
-    extractImageFromHtml(item.contentEncoded) ||
-    extractImageFromHtml(item.content) ||
-    feedImage
+    normalizeImageUrl(normalizeUnknownMediaUrl(item.mediaContent), baseUrl) ||
+    normalizeImageUrl(normalizeUnknownMediaUrl(item.mediaThumbnail), baseUrl) ||
+    normalizeImageUrl(extractImageFromHtml(item.contentEncoded), baseUrl) ||
+    normalizeImageUrl(extractImageFromHtml(item.content), baseUrl)
   );
+}
+
+async function fetchArticleImage(url: string) {
+  if (!/^https?:\/\//i.test(url)) {
+    return undefined;
+  }
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        accept: 'text/html,application/xhtml+xml',
+      },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const html = await response.text();
+    const metaPatterns = [
+      /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url)?["']/i,
+      /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i,
+    ];
+    for (const pattern of metaPatterns) {
+      const candidate = normalizeImageUrl(html.match(pattern)?.[1], url);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return normalizeImageUrl(extractImageFromHtml(html), url);
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeRssSubscription(input: Partial<RSSSubscription> & { url: string }): RSSSubscription {
@@ -1023,10 +1071,10 @@ export async function fetchRssFeeds(subscriptions: RSSSubscription[], perFeedLim
         lastError: undefined,
       };
 
-      const items: RSSFeedItem[] = (feed.items || [])
-        .slice(0, Math.max(1, perFeedLimit))
-        .map((item, index) => {
+      const items: RSSFeedItem[] = (await Promise.all(
+        (feed.items || []).slice(0, Math.max(1, perFeedLimit)).map(async (item, index) => {
           const itemUrl = item.link || item.guid || `${subscription.url}#${index}`;
+          const itemImage = pickItemImage(item, itemUrl) || await fetchArticleImage(itemUrl);
           return {
             id: `${subscription.id}-${normalizeTopicKey(item.guid || itemUrl || item.title || String(index))}`,
             subscriptionId: subscription.id,
@@ -1036,11 +1084,11 @@ export async function fetchRssFeeds(subscriptions: RSSSubscription[], perFeedLim
             url: itemUrl,
             excerpt: stripHtml(item.contentSnippet || item.contentEncoded || item.content).slice(0, 220),
             publishedAt: item.isoDate || item.pubDate || undefined,
-            coverImageUrl: pickItemImage(item, nextSubscription.coverImageUrl),
+            coverImageUrl: itemImage,
             sourceSiteUrl: nextSubscription.siteUrl,
           };
         })
-        .filter((item) => Boolean(item.url));
+      )).filter((item) => Boolean(item.url));
 
       return { subscription: nextSubscription, items };
     })

@@ -150,7 +150,16 @@ export function OutputStudioView({ analyses, onSelect }: OutputStudioViewProps) 
             const structure = toStructureBrief(analysis.content);
 
             return (
-              <article key={analysis.id} className="flex flex-col rounded-xl border border-outline-variant/14 bg-surface-container-lowest p-6 shadow-[0_14px_30px_rgba(137,72,84,0.05)]">
+              <article key={analysis.id} className="overflow-hidden rounded-xl border border-outline-variant/14 bg-surface-container-lowest shadow-[0_14px_30px_rgba(137,72,84,0.05)]">
+                {analysis.coverImageUrl ? (
+                  <img
+                    alt={analysis.title}
+                    className="h-48 w-full object-cover"
+                    referrerPolicy="no-referrer"
+                    src={analysis.coverImageUrl}
+                  />
+                ) : null}
+                <div className="flex flex-col p-6">
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">{analysis.source}</p>
@@ -203,6 +212,7 @@ export function OutputStudioView({ analyses, onSelect }: OutputStudioViewProps) 
                   <button className="text-sm font-bold text-primary" onClick={() => onSelect(analysis.id)} type="button">
                     打开详情
                   </button>
+                </div>
                 </div>
               </article>
             );

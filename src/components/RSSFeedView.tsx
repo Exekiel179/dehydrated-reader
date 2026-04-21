@@ -58,17 +58,6 @@ function itemMatches(item: RSSFeedItem, keyword: string) {
   );
 }
 
-function itemCardSpan(item: RSSFeedItem, index: number) {
-  const textLength = `${item.title}${item.excerpt}`.length;
-  if (item.coverImageUrl && textLength > 190) {
-    return 'md:col-span-2 xl:col-span-2';
-  }
-  if (index % 7 === 0 && textLength > 120) {
-    return 'md:col-span-2';
-  }
-  return '';
-}
-
 export function RSSFeedView({
   subscriptions,
   onSaveSubscriptions,
@@ -461,72 +450,60 @@ export function RSSFeedView({
           ) : null}
         </div>
 
-        <div className="grid auto-rows-[12px] grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-          {visibleItems.map((item, index) => {
+        <div className="columns-1 gap-5 md:columns-2 xl:columns-3 2xl:columns-4">
+          {visibleItems.map((item) => {
             const excerpt = item.excerpt || '该订阅项没有提供摘要，建议直接脱水正文。';
-            const spanRows = item.coverImageUrl ? (excerpt.length > 160 ? 'row-span-[28]' : 'row-span-[24]') : excerpt.length > 180 ? 'row-span-[24]' : 'row-span-[20]';
             return (
               <article
                 key={item.id}
-                className={`${spanRows} ${itemCardSpan(item, index)} group overflow-hidden rounded-xl border border-outline-variant/14 bg-surface-container-lowest shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(137,72,84,0.08)]`}
+                className="group mb-5 break-inside-avoid overflow-hidden rounded-lg border border-outline-variant/14 bg-surface-container-lowest shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(137,72,84,0.08)]"
               >
-                <div className="flex h-full flex-col">
-                  <div className={`relative overflow-hidden bg-surface-container-low ${item.coverImageUrl ? 'h-40' : 'h-20'}`}>
-                    {item.coverImageUrl ? (
-                      <img alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" referrerPolicy="no-referrer" src={item.coverImageUrl} />
-                    ) : item.sourceSiteUrl ? (
-                      <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,var(--color-primary)/10,transparent)]">
-                        <img alt={item.subscriptionTitle} className="h-12 w-12 rounded-xl object-cover" src={faviconUrl(item.sourceSiteUrl)} />
-                      </div>
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,var(--color-primary)/10,transparent)]">
-                        <Rss className="h-8 w-8 text-primary/70" />
-                      </div>
-                    )}
-                    <div className="absolute left-3 top-3 rounded-full bg-surface-container-lowest/90 px-2.5 py-1 text-[10px] font-bold text-primary">
-                      {CATEGORY_LABELS[item.subscriptionCategory]}
-                    </div>
+                {item.coverImageUrl ? (
+                  <div className="relative max-h-56 overflow-hidden bg-surface-container-low">
+                    <img alt={item.title} className="block h-auto w-full object-cover transition duration-500 group-hover:scale-[1.02]" referrerPolicy="no-referrer" src={item.coverImageUrl} />
                   </div>
+                ) : null}
 
-                  <div className="flex min-h-0 flex-1 flex-col p-5">
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-on-surface-variant">
-                      <span className="rounded-full bg-primary/8 px-2.5 py-1 font-bold text-primary">{item.subscriptionTitle}</span>
-                      <span>{formatPublishedAt(item.publishedAt)}</span>
-                    </div>
-                    <h3 className="mt-3 text-lg font-bold leading-7 text-on-surface">{item.title}</h3>
-                    <p className="mt-3 line-clamp-4 text-sm leading-7 text-on-surface-variant">{excerpt}</p>
+                <div className="p-4">
+                  <div className="mb-3 flex items-center gap-2 text-[11px] text-on-surface-variant">
+                    {item.sourceSiteUrl ? <img alt="" className="h-4 w-4 rounded object-cover" src={faviconUrl(item.sourceSiteUrl)} /> : null}
+                    <span className="truncate font-bold text-primary">{item.subscriptionTitle}</span>
+                    <span className="shrink-0">{formatPublishedAt(item.publishedAt)}</span>
+                  </div>
+                  <h3 className="text-base font-bold leading-6 text-on-surface">{item.title}</h3>
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-on-surface-variant">{excerpt}</p>
 
-                    <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
-                      <button
-                        className="inline-flex items-center gap-2 rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-3 py-2 text-xs font-bold text-on-primary"
-                        disabled={dehydratingUrls.includes(item.url)}
-                        onClick={async () => {
-                          try {
-                            setDehydratingUrls((current) => (current.includes(item.url) ? current : [...current, item.url]));
-                            await onDehydrateUrl(item.url);
-                          } finally {
-                            setDehydratingUrls((current) => current.filter((url) => url !== item.url));
-                          }
-                        }}
-                        type="button"
-                      >
-                        <Bolt className="h-3.5 w-3.5" />
-                        {dehydratingUrls.includes(item.url) ? '排队中' : '脱水'}
-                      </button>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-primary/8 px-2.5 py-1 text-[10px] font-bold text-primary">{CATEGORY_LABELS[item.subscriptionCategory]}</span>
+                    <button
+                      className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-bold text-on-primary disabled:cursor-wait disabled:opacity-70"
+                      disabled={dehydratingUrls.includes(item.url)}
+                      onClick={async () => {
+                        try {
+                          setDehydratingUrls((current) => (current.includes(item.url) ? current : [...current, item.url]));
+                          await onDehydrateUrl(item.url);
+                        } finally {
+                          setDehydratingUrls((current) => current.filter((url) => url !== item.url));
+                        }
+                      }}
+                      type="button"
+                    >
+                      <Bolt className="h-3.5 w-3.5" />
+                      {dehydratingUrls.includes(item.url) ? '排队' : '脱水'}
+                    </button>
 
-                      <a className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant hover:text-primary" href={item.url} rel="noreferrer" target="_blank">
-                        原文 <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
+                    <a className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant hover:text-primary" href={item.url} rel="noreferrer" target="_blank">
+                      原文 <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
 
-                      <button
-                        className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant hover:text-primary"
-                        onClick={() => onIgnoreItem(item.id)}
-                        type="button"
-                      >
-                        <EyeOff className="h-3.5 w-3.5" />
-                        忽略
-                      </button>
-                    </div>
+                    <button
+                      className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant hover:text-primary"
+                      onClick={() => onIgnoreItem(item.id)}
+                      type="button"
+                    >
+                      <EyeOff className="h-3.5 w-3.5" />
+                      忽略
+                    </button>
                   </div>
                 </div>
               </article>

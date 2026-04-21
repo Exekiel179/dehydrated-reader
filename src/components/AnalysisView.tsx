@@ -84,6 +84,17 @@ export function AnalysisView({ analysis, onDelete, onGenerateStructure }: Analys
         </div>
       </div>
 
+      {analysis.coverImageUrl ? (
+        <div className="mb-6 overflow-hidden rounded-xl border border-outline-variant/14 bg-surface-container-lowest shadow-[0_12px_30px_rgba(137,72,84,0.05)]">
+          <img
+            alt={analysis.title}
+            className="max-h-[360px] w-full object-cover"
+            referrerPolicy="no-referrer"
+            src={analysis.coverImageUrl}
+          />
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 lg:col-span-7 bg-surface-container-lowest p-8 rounded-xl shadow-[0_4px_24px_rgba(137,72,84,0.04)] min-h-[600px] overflow-y-auto">
           <div className="flex items-center gap-2 mb-6 text-primary border-b border-outline-variant/20 pb-4">
