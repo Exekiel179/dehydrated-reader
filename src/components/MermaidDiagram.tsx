@@ -49,6 +49,24 @@ function repairMermaidChart(chart: string) {
   return lines.join('\n');
 }
 
+function buildFallbackChart(chart: string) {
+  const labels = Array.from(chart.matchAll(/\["([^"]+)"\]|\[([^\]]+)\]|\(([^\)]+)\)|\{([^}]+)\}/g))
+    .map((match) => cleanNodeLabel(match[1] || match[2] || match[3] || match[4] || ''))
+    .filter(Boolean)
+    .filter((label, index, labels) => labels.indexOf(label) === index)
+    .slice(0, 6);
+
+  const safeLabels = labels.length >= 2 ? labels : ['结构起点', '关键论点', '证据支撑', '结论收束'];
+  const lines = ['flowchart TD'];
+  safeLabels.forEach((label, index) => {
+    lines.push(`N${index + 1}["${label}"]`);
+  });
+  safeLabels.slice(1).forEach((_label, index) => {
+    lines.push(`N${index + 1} --> N${index + 2}`);
+  });
+  return lines.join('\n');
+}
+
 export function MermaidDiagram({ chart }: MermaidDiagramProps) {
   const id = useId().replace(/:/g, '-');
   const [svg, setSvg] = useState('');
@@ -64,15 +82,35 @@ export function MermaidDiagram({ chart }: MermaidDiagramProps) {
           startOnLoad: false,
           securityLevel: 'loose',
           theme: 'neutral',
+          suppressErrorRendering: true,
         });
+
+        const renderAttempt = async (diagramId: string, source: string) => {
+          await mermaid.parse(source, { suppressErrors: false });
+          const result = await mermaid.render(diagramId, source);
+          if (/Syntax error in text|mermaid version/i.test(result.svg)) {
+            throw new Error('Mermaid returned an error diagram.');
+          }
+          return result.svg;
+        };
+
+        const candidates = [chart, repairMermaidChart(chart), buildFallbackChart(chart)];
         let rendered = '';
-        try {
-          const result = await mermaid.render(`diagram-${id}`, chart);
-          rendered = result.svg;
-        } catch {
-          const result = await mermaid.render(`diagram-${id}-repaired`, repairMermaidChart(chart));
-          rendered = result.svg;
+        let lastError: unknown = null;
+
+        for (const [index, candidate] of candidates.entries()) {
+          try {
+            rendered = await renderAttempt(`diagram-${id}-${index}`, candidate);
+            break;
+          } catch (error) {
+            lastError = error;
+          }
         }
+
+        if (!rendered) {
+          throw lastError instanceof Error ? lastError : new Error('结构图解析失败');
+        }
+
         if (!cancelled) {
           setSvg(rendered);
           setError(null);

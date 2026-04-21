@@ -64,6 +64,12 @@ interface FinalDigest {
   visualSynthesis: Analysis['visualSynthesis'];
 }
 
+interface StructureDiagramSpec {
+  nodes?: Array<{ id?: string; label?: string; type?: 'section' | 'claim' | 'evidence' | 'turn' | 'result' }>;
+  edges?: Array<{ from?: string; to?: string; label?: string }>;
+  caption?: string;
+}
+
 interface KnowledgeBaseEntry {
   id?: string;
   title?: string;
@@ -614,6 +620,70 @@ function buildFallbackDiagram(title: string, chunks: string[]) {
   return lines.join('\n');
 }
 
+function safeNodeId(input: string, index: number) {
+  const cleaned = input.replace(/[^A-Za-z0-9_]/g, '').trim();
+  if (/^[A-Za-z][A-Za-z0-9_]*$/.test(cleaned)) {
+    return cleaned.slice(0, 18);
+  }
+  return `N${index + 1}`;
+}
+
+function buildMermaidFromSpec(spec: StructureDiagramSpec, fallback: string) {
+  const rawNodes = Array.isArray(spec.nodes) ? spec.nodes.slice(0, 8) : [];
+  const rawEdges = Array.isArray(spec.edges) ? spec.edges.slice(0, 12) : [];
+  const usedIds = new Set<string>();
+  const nodes = rawNodes
+    .map((node, index) => {
+      const originalId = String(node.id || `node_${index + 1}`);
+      let id = safeNodeId(originalId, index);
+      if (usedIds.has(id)) {
+        id = `N${index + 1}`;
+      }
+      usedIds.add(id);
+      return {
+        originalId,
+        id,
+        label: sanitizeNodeLabel(String(node.label || `节点 ${index + 1}`)),
+      };
+    })
+    .filter((node) => node.label);
+
+  if (nodes.length < 2) {
+    return fallback;
+  }
+
+  const idMap = new Map<string, string>();
+  nodes.forEach((node) => {
+    idMap.set(node.originalId, node.id);
+    idMap.set(node.id, node.id);
+  });
+
+  const lines = ['flowchart TD'];
+  nodes.forEach((node) => {
+    lines.push(`${node.id}["${node.label}"]`);
+  });
+
+  let edgeCount = 0;
+  rawEdges.forEach((edge) => {
+    const from = idMap.get(String(edge.from || ''));
+    const to = idMap.get(String(edge.to || ''));
+    if (!from || !to || from === to) {
+      return;
+    }
+    const label = sanitizeNodeLabel(String(edge.label || '')).replace(/^节点$/, '');
+    lines.push(label ? `${from} -->|${label}| ${to}` : `${from} --> ${to}`);
+    edgeCount += 1;
+  });
+
+  if (edgeCount === 0) {
+    nodes.slice(1).forEach((node, index) => {
+      lines.push(`${nodes[index].id} --> ${node.id}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
 function sanitizeSummary(summaryMarkdown: string) {
   return summaryMarkdown
     .replace(/当前未连接大模型[^\n]*/g, '')
@@ -641,6 +711,7 @@ function sanitizeMermaid(raw: string, fallback: string) {
   const firstLine = lines[0].replace(/^graph\b/i, 'flowchart').replace(/\b(LR|RL|BT)\b/i, 'TD');
   const normalizedLines = [firstLine.startsWith('flowchart') ? firstLine : 'flowchart TD'];
   let edgeCount = 0;
+  const seenNodeLines = new Set<string>();
 
   const normalizeNodeLabel = (label: string) =>
     sanitizeNodeLabel(label)
@@ -671,10 +742,13 @@ function sanitizeMermaid(raw: string, fallback: string) {
     }
 
     const line = quoteNodeLabel(rawLine.replace(/；/g, ';'));
+    const nodeOnlyMatch = line.match(/^([A-Za-z][A-Za-z0-9_]*)\["([^"]+)"\]$/);
+    if (nodeOnlyMatch) {
+      seenNodeLines.add(`${nodeOnlyMatch[1]}["${normalizeNodeLabel(nodeOnlyMatch[2])}"]`);
+      continue;
+    }
+
     if (!/^[A-Za-z][\w-]*(?:\["[^"]+"\])?\s*(?:[-.=]+>|-->|---|-\.-)\s*[A-Za-z][\w-]*(?:\["[^"]+"\])?/.test(line)) {
-      if (/^[A-Za-z][\w-]*\["[^"]+"\]$/.test(line)) {
-        normalizedLines.push(line);
-      }
       continue;
     }
 
@@ -682,7 +756,7 @@ function sanitizeMermaid(raw: string, fallback: string) {
     normalizedLines.push(line);
   }
 
-  return edgeCount > 0 ? normalizedLines.join('\n') : fallback;
+  return edgeCount > 0 ? [...normalizedLines, ...seenNodeLines].join('\n') : fallback;
 }
 
 function extractJson<T>(raw: string): T {
@@ -967,8 +1041,8 @@ export async function generateStructureDiagramForAnalysis(
 
   const text = await callAnthropic(
     profile,
-    '你是一个结构图生成代理。只输出 JSON，不解释。',
-    `请把下面这篇条目的结构关系转成 Mermaid。输出严格 JSON：{"mermaid":"flowchart TD ...","caption":"一句话说明结构图如何对应原文"}\n\n要求：\n1. 必须表达原文结构，不能只画“原文->摘要”。\n2. 优先使用 flowchart TD。\n3. 节点标签要短，体现章节、论点、因果、并列或递进。\n4. 不要输出多余文字。\n\n条目信息：\n- 标题：${analysis.title}\n- 来源：${analysis.source}\n- 类型：${analysis.type}\n- URL：${analysis.sourceUrl || '无'}\n\n摘要正文：\n${analysis.content}`,
+    '你是一个文章结构解析代理。只输出 JSON，不解释。不要输出 Mermaid 代码。',
+    `请把下面这篇条目的结构关系解析成节点和连线。输出严格 JSON：{"nodes":[{"id":"n1","label":"短标签","type":"section|claim|evidence|turn|result"}],"edges":[{"from":"n1","to":"n2","label":"关系词"}],"caption":"一句话说明结构图如何对应原文"}\n\n要求：\n1. 只输出 JSON，禁止 Markdown，禁止 Mermaid，禁止代码块。\n2. nodes 保留 4-8 个节点，必须来自原文结构，不能只写“原文/摘要/结论”。\n3. id 只能使用 n1、n2、n3 这种 ASCII 标识；edges 必须引用已有 id。\n4. label 控制在 4-14 个中文字符，去掉括号、冒号、引号、斜杠等符号。\n5. edges 表达章节推进、因果、转折、证据支撑或结论收束，label 控制在 2-6 个中文字符。\n6. 如果原文是并列结构，用同一上游节点分叉；如果是论证结构，用“问题→机制→证据→结果”的推进。\n\n条目信息：\n- 标题：${analysis.title}\n- 来源：${analysis.source}\n- 类型：${analysis.type}\n- URL：${analysis.sourceUrl || '无'}\n\n摘要正文：\n${analysis.content}`,
     900
   );
 
@@ -977,10 +1051,13 @@ export async function generateStructureDiagramForAnalysis(
   }
 
   try {
-    const parsed = extractJson<{ mermaid?: string; caption?: string }>(text);
+    const parsed = extractJson<StructureDiagramSpec & { mermaid?: string }>(text);
+    const mermaid = parsed.nodes?.length
+      ? buildMermaidFromSpec(parsed, fallback.structureDiagram.mermaid)
+      : sanitizeMermaid(parsed.mermaid || '', fallback.structureDiagram.mermaid);
     return {
       structureDiagram: {
-        mermaid: sanitizeMermaid(parsed.mermaid || '', fallback.structureDiagram.mermaid),
+        mermaid,
         caption: parsed.caption?.trim() || fallback.structureDiagram.caption,
       },
     };
