@@ -1010,6 +1010,34 @@ export function SettingsView({
                     </span>
                   </span>
                 </label>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">文章列表页数</span>
+                    <input
+                      className="w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                      max={10}
+                      min={1}
+                      onChange={(event) => setSocialDraft((current) => ({ ...current, wechatMaxPages: Number(event.target.value) }))}
+                      type="number"
+                      value={socialDraft.wechatMaxPages}
+                    />
+                    <p className="text-xs leading-6 text-on-surface-variant">按公众号名称抓取时最多翻几页文章列表。</p>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">请求间隔</span>
+                    <input
+                      className="w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                      max={120}
+                      min={2}
+                      onChange={(event) => setSocialDraft((current) => ({ ...current, wechatRequestIntervalSeconds: Number(event.target.value) }))}
+                      type="number"
+                      value={socialDraft.wechatRequestIntervalSeconds}
+                    />
+                    <p className="text-xs leading-6 text-on-surface-variant">秒。公众号频繁受限时，把这里调大一点。</p>
+                  </label>
+                </div>
               </div>
             </section>
           </div>

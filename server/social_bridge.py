@@ -72,7 +72,7 @@ def normalize_wechat_item(item: dict) -> dict:
 def build_wechat_headers(cookie_string: str) -> dict:
     return {
         "cookie": cookie_string,
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 MicroMessenger/8.0.49",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
         "referer": "https://mp.weixin.qq.com/",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.7",
     }
@@ -291,7 +291,9 @@ def run_wechat(project_root: Path, query: str, limit: int) -> dict:
         raise RuntimeError(f"未找到匹配的公众号: {query}")
 
     account = accounts[0]
-    pages = max(1, min(3, (limit + 4) // 5))
+    configured_pages = int(os.environ.get("SOCIAL_BRIDGE_WECHAT_MAX_PAGES", "0") or "0")
+    pages = max(1, min(10, configured_pages or ((limit + 4) // 5)))
+    scraper.request_delay = (1, max(2, int(os.environ.get("SOCIAL_BRIDGE_WECHAT_REQUEST_INTERVAL", "8") or "8")) / 2)
     articles = scraper.get_account_articles(account["wpub_name"], account["wpub_fakid"], pages)
 
     items = []

@@ -1756,7 +1756,7 @@ async function getWechatCookie(settings?: SocialCrawlerSettings) {
 function buildWechatRequestHeaders(cookieString: string) {
   const headers: Record<string, string> = {
     'user-agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 MicroMessenger/8.0.49',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
     accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.7',
     referer: 'https://mp.weixin.qq.com/',
@@ -1854,7 +1854,7 @@ async function fetchWechatWithManualVerification(url: string, cookieString: stri
       headless: false,
       viewport: { width: 1280, height: 900 },
       userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 MicroMessenger/8.0.49',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
       locale: 'zh-CN',
       proxy: proxy ? { server: proxy } : undefined,
     });

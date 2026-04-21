@@ -97,6 +97,8 @@ export interface SocialCrawlerSettings {
   wechatCookieString: string;
   wechatCacheFile: string;
   wechatManualVerify: boolean;
+  wechatMaxPages: number;
+  wechatRequestIntervalSeconds: number;
   crawlSubpages: boolean;
   crawlMaxDepth: number;
   crawlMaxPages: number;

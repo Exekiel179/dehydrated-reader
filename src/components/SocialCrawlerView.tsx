@@ -12,8 +12,8 @@ interface SocialCrawlerViewProps {
 const PLATFORM_META = {
   xhs: {
     label: 'Spider_XHS',
-    title: '小红书工作台',
-    description: '适合爆款笔记、产品种草、创作者内容和图文原帖。',
+    title: '小红书笔记采集',
+    description: '采集图文笔记、封面、互动指标和创作者线索。',
     placeholder: '输入关键词、笔记链接或用户话题',
     icon: WandSparkles,
     accentClass: 'from-[#f7648b] to-[#ff9f8d]',
@@ -22,8 +22,8 @@ const PLATFORM_META = {
   },
   douyin: {
     label: 'DouYin_Spider',
-    title: '抖音工作台',
-    description: '适合作品搜索、视频内容拆解、热点视频和创作者素材。',
+    title: '抖音视频采集',
+    description: '采集作品、封面、作者和热点视频素材。',
     placeholder: '输入关键词、作品链接或账号方向',
     icon: Flame,
     accentClass: 'from-[#111111] to-[#6f7cff]',
@@ -32,8 +32,8 @@ const PLATFORM_META = {
   },
   wechat: {
     label: 'wechat_spider',
-    title: '公众号工作台',
-    description: '适合账号检索、文章正文抓取、封面获取和公众号历史内容。',
+    title: '公众号文章采集',
+    description: '搜索公众号、读取文章列表，并抓取正文与封面。',
     placeholder: '输入公众号名称或文章链接',
     icon: BookOpenText,
     accentClass: 'from-[#217346] to-[#64b862]',
@@ -62,6 +62,7 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
   const [crawlError, setCrawlError] = useState<string | null>(null);
   const [crawlResult, setCrawlResult] = useState<SocialCrawlResponse | null>(null);
   const [dehydratingUrls, setDehydratingUrls] = useState<string[]>([]);
+  const [crawlLimit, setCrawlLimit] = useState(8);
 
   const activeMeta = PLATFORM_META[provider];
   const authReady = useMemo(() => hasProviderAuth(provider, settings), [provider, settings]);
@@ -70,7 +71,7 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
     <div className="mx-auto max-w-screen-2xl px-4 py-6 md:px-6 md:py-10 lg:px-10">
       <section className="space-y-3">
         <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-on-surface-variant/55">社媒抓取</p>
-        <h1 className="font-headline text-[clamp(2.2rem,3.8vw,3.8rem)] font-extrabold tracking-tight text-on-surface">平台工作台</h1>
+        <h1 className="font-headline text-[clamp(2.2rem,3.8vw,3.8rem)] font-extrabold tracking-tight text-on-surface">社媒采集器</h1>
         <p className="max-w-3xl text-sm leading-7 text-on-surface-variant">
           小红书、抖音、公众号分别独立工作。先选平台，再抓真实内容，确认后直接送去脱水。
         </p>
@@ -142,6 +143,27 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
             </button>
           </div>
 
+          <div className="mt-4 grid gap-3 rounded-lg border border-outline-variant/14 bg-surface-container-lowest p-4">
+            <label className="space-y-2">
+              <span className="text-sm font-bold text-on-surface">本次抓取数量</span>
+              <input
+                className="w-full rounded-lg border border-outline-variant/12 bg-surface px-4 py-3 text-sm outline-none transition focus:border-primary/18 focus:ring-2 focus:ring-primary/10"
+                max={20}
+                min={1}
+                onChange={(event) => setCrawlLimit(Math.max(1, Math.min(20, Number(event.target.value) || 8)))}
+                type="number"
+                value={crawlLimit}
+              />
+            </label>
+            {provider === 'wechat' ? (
+              <div className="grid gap-2 text-xs leading-6 text-on-surface-variant">
+                <p>文章列表页数：{settings.wechatMaxPages} 页</p>
+                <p>请求间隔：{settings.wechatRequestIntervalSeconds} 秒</p>
+                <p>这些参数在设置页的 wechat_spider 区域调整。</p>
+              </div>
+            ) : null}
+          </div>
+
           <form
             className="mt-6 space-y-4"
             onSubmit={async (event) => {
@@ -154,7 +176,7 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
               setCrawlLoading(true);
               setCrawlError(null);
               try {
-                const result = await crawlSocial({ provider, query: query.trim(), limit: 8, settings });
+                const result = await crawlSocial({ provider, query: query.trim(), limit: crawlLimit, settings });
                 setCrawlResult(result);
               } catch (error) {
                 setCrawlResult(null);

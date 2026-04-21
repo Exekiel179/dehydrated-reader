@@ -1220,6 +1220,8 @@ export async function crawlSocialProvider(
   const wechatToken = settings?.wechatToken?.trim() || '';
   const wechatCookieString = settings?.wechatCookieString?.trim() || '';
   const wechatCacheFile = settings?.wechatCacheFile?.trim() || '';
+  const wechatMaxPages = String(Math.max(1, Math.min(10, Number(settings?.wechatMaxPages || 2))));
+  const wechatRequestIntervalSeconds = String(Math.max(2, Math.min(120, Number(settings?.wechatRequestIntervalSeconds || 8))));
 
   if (provider === 'xhs') {
     await ensureNodeDependencies(xhsRoot, ['crypto-js', 'jsdom']);
@@ -1257,6 +1259,8 @@ export async function crawlSocialProvider(
           SOCIAL_BRIDGE_WECHAT_TOKEN: wechatToken,
           SOCIAL_BRIDGE_WECHAT_COOKIE: wechatCookieString,
           SOCIAL_BRIDGE_WECHAT_CACHE_FILE: wechatCacheFile,
+          SOCIAL_BRIDGE_WECHAT_MAX_PAGES: wechatMaxPages,
+          SOCIAL_BRIDGE_WECHAT_REQUEST_INTERVAL: wechatRequestIntervalSeconds,
         },
       }
     );

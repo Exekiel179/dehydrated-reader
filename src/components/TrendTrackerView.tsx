@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, EyeOff, Flame, LoaderCircle, Radar, RefreshCw, Search } from 'lucide-react';
+import { Copy, EyeOff, Flame, LoaderCircle, Radar, Search } from 'lucide-react';
 import type { TrendOverviewResponse, TrendTopic } from '@/src/types';
-import { fetchTrendOverview, refreshTrendOverview } from '@/src/lib/api';
+import { refreshTrendOverview } from '@/src/lib/api';
 
 interface TrendTrackerViewProps {
   onDehydrateUrl: (url: string) => Promise<void>;
@@ -32,17 +32,19 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
   useEffect(() => {
     let cancelled = false;
 
-    async function loadOverview() {
+    async function startRadar() {
       setOverviewLoading(true);
       setOverviewError(null);
+      setRefreshHint('正在启动 TrendRadar 搜索雷达...');
       try {
-        const nextOverview = await fetchTrendOverview();
+        const result = await refreshTrendOverview();
         if (!cancelled) {
-          setOverview(nextOverview);
+          setOverview(result.overview);
+          setRefreshHint(result.message);
         }
       } catch (error) {
         if (!cancelled) {
-          setOverviewError(error instanceof Error ? error.message : '热点追踪读取失败。');
+          setOverviewError(error instanceof Error ? error.message : '热点雷达启动失败。');
         }
       } finally {
         if (!cancelled) {
@@ -51,7 +53,7 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
       }
     }
 
-    void loadOverview();
+    void startRadar();
     return () => {
       cancelled = true;
     };
@@ -88,9 +90,9 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
     <div className="mx-auto max-w-screen-2xl px-8 py-10">
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-on-surface">热点追踪</h1>
+          <h1 className="text-4xl font-extrabold tracking-tight text-on-surface">热点雷达</h1>
           <p className="mt-3 max-w-3xl text-sm text-on-surface-variant">
-            这里专门看 TrendRadar 的热点快照、持续上榜主题和本轮热榜。直接按平台卡片筛选，再从当前列表里检索。
+            打开页面会先启动 TrendRadar 采集，再把本轮热榜和持续上榜主题整理成可筛选列表。
           </p>
         </div>
         <button
@@ -114,8 +116,8 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
           disabled={refreshingSnapshot}
           type="button"
         >
-          {refreshingSnapshot ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          {refreshingSnapshot ? '正在采集...' : '采集并刷新'}
+          {refreshingSnapshot ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Radar className="h-4 w-4" />}
+          {refreshingSnapshot ? '雷达扫描中...' : '重新扫描'}
         </button>
       </div>
       {refreshHint ? <p className="-mt-4 mb-6 text-sm text-on-surface-variant">{refreshHint}</p> : null}
@@ -125,7 +127,7 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">TrendRadar</p>
-              <h2 className="mt-2 text-2xl font-bold text-on-surface">热点快照</h2>
+              <h2 className="mt-2 text-2xl font-bold text-on-surface">雷达结果</h2>
             </div>
             {overview?.snapshotLabel ? <span className="rounded-full bg-primary/8 px-3 py-1 text-xs font-bold text-primary">{overview.snapshotLabel}</span> : null}
           </div>
@@ -133,7 +135,7 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
           {overviewLoading ? (
             <div className="flex min-h-64 items-center justify-center text-sm text-on-surface-variant">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-              正在读取热点快照...
+              正在启动 TrendRadar 搜索雷达...
             </div>
           ) : overviewError ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">{overviewError}</div>
