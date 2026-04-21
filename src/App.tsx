@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { AnimatePresence, motion } from 'motion/react';
 import { Sidebar } from './components/Sidebar';
 import { TopAppBar } from './components/TopAppBar';
-import { ViewType, Analysis, AiProfile, ColorTheme, AccentPreset, RSSSubscription, SocialCrawlerSettings } from './types';
+import { ViewType, Analysis, AiProfile, ColorTheme, AccentPreset, RSSSubscription, SocialCrawlerSettings, PromptSettings } from './types';
 import { currentUser, mockAnalyses } from './mockData';
 import { DashboardView } from './components/DashboardView';
 import { AnalysisView } from './components/AnalysisView';
@@ -31,6 +31,14 @@ const IGNORED_TREND_ITEMS_STORAGE_KEY = 'dehydrated-reader-ignored-trend-items';
 const USER_PROFILE_STORAGE_KEY = 'dehydrated-reader-user-profile';
 const SOCIAL_CRAWLER_SETTINGS_STORAGE_KEY = 'dehydrated-reader-social-crawler-settings';
 const RSS_SUBSCRIPTIONS_STORAGE_KEY = 'dehydrated-reader-rss-subscriptions';
+const PROMPT_SETTINGS_STORAGE_KEY = 'dehydrated-reader-prompt-settings';
+
+const DEFAULT_PROMPT_SETTINGS: PromptSettings = {
+  summaryPrompt:
+    '只保留信息密度高的事实、判断、结构和行动线索。删除套话、过渡句、空泛形容、重复背景。摘要必须适合回看、标注和写入知识库。',
+  structurePrompt:
+    '结构图必须表达文章自身的论证推进、层级关系、因果链或并列关系。不要画“原文到摘要”的通用流程图，节点必须来自当前条目的真实内容。',
+};
 
 const DEFAULT_SOCIAL_CRAWLER_SETTINGS: SocialCrawlerSettings = {
   pythonPath: '',
@@ -70,6 +78,13 @@ function normalizeSocialCrawlerSettings(settings: Partial<SocialCrawlerSettings>
   };
 }
 
+function normalizePromptSettings(settings: Partial<PromptSettings> | null | undefined): PromptSettings {
+  return {
+    summaryPrompt: String(settings?.summaryPrompt || DEFAULT_PROMPT_SETTINGS.summaryPrompt),
+    structurePrompt: String(settings?.structurePrompt || DEFAULT_PROMPT_SETTINGS.structurePrompt),
+  };
+}
+
 function normalizeRssSubscription(subscription: Partial<RSSSubscription> | null | undefined): RSSSubscription {
   const url = String(subscription?.url || '').trim();
   const baseId = url || String(Date.now());
@@ -99,6 +114,7 @@ interface DehydrateQueueJob {
   options: { verifyWithSearch: boolean; saveToKnowledgeBase: boolean; dehydrationLevel: number };
   aiProfile: AiProfile | null;
   socialCrawlerSettings: SocialCrawlerSettings;
+  promptSettings: PromptSettings;
   resolve: (analysis: Analysis) => void;
   reject: (error: unknown) => void;
 }
@@ -368,6 +384,18 @@ export default function App() {
       return DEFAULT_SOCIAL_CRAWLER_SETTINGS;
     }
   });
+  const [promptSettings, setPromptSettings] = useState<PromptSettings>(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_PROMPT_SETTINGS;
+    }
+
+    try {
+      const saved = window.localStorage.getItem(PROMPT_SETTINGS_STORAGE_KEY);
+      return saved ? normalizePromptSettings(JSON.parse(saved)) : DEFAULT_PROMPT_SETTINGS;
+    } catch {
+      return DEFAULT_PROMPT_SETTINGS;
+    }
+  });
   const [rssSubscriptions, setRssSubscriptions] = useState<RSSSubscription[]>(() => {
     if (typeof window === 'undefined') {
       return DEFAULT_RSS_SUBSCRIPTIONS;
@@ -424,6 +452,7 @@ export default function App() {
                 options: job.options,
                 aiProfile: job.aiProfile,
                 socialCrawlerSettings: job.socialCrawlerSettings,
+                promptSettings: job.promptSettings,
               })).analysis
             : buildAnalysis(job.source, Date.now(), job.options.dehydrationLevel);
 
@@ -456,6 +485,7 @@ export default function App() {
           options,
           aiProfile: activeProfile || null,
           socialCrawlerSettings,
+          promptSettings,
           resolve,
           reject,
         };
@@ -464,7 +494,7 @@ export default function App() {
         setDehydrateQueue((previous) => [...previous, { id, source, status: 'queued' }]);
         void runDehydrateQueue();
       }),
-    [activeProfile, runDehydrateQueue, socialCrawlerSettings]
+    [activeProfile, promptSettings, runDehydrateQueue, socialCrawlerSettings]
   );
 
   const handleEstimateSource = async (url: string) => estimateSource(url, activeProfile, socialCrawlerSettings);
@@ -475,7 +505,7 @@ export default function App() {
       throw new Error('条目不存在。');
     }
 
-    const result = await generateStructureDiagram(target, activeProfile);
+    const result = await generateStructureDiagram(target, activeProfile, promptSettings);
     setAnalyses((previous) =>
       previous.map((analysis) =>
         analysis.id === id
@@ -555,6 +585,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(SOCIAL_CRAWLER_SETTINGS_STORAGE_KEY, JSON.stringify(socialCrawlerSettings));
   }, [socialCrawlerSettings]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PROMPT_SETTINGS_STORAGE_KEY, JSON.stringify(promptSettings));
+  }, [promptSettings]);
 
   useEffect(() => {
     window.localStorage.setItem(RSS_SUBSCRIPTIONS_STORAGE_KEY, JSON.stringify(rssSubscriptions));
@@ -692,6 +726,8 @@ export default function App() {
             onSaveUserProfile={(user) => setUserProfile(normalizeUserProfile(user))}
             socialCrawlerSettings={socialCrawlerSettings}
             onSaveSocialCrawlerSettings={(settings) => setSocialCrawlerSettings(normalizeSocialCrawlerSettings(settings))}
+            promptSettings={promptSettings}
+            onSavePromptSettings={(settings) => setPromptSettings(normalizePromptSettings(settings))}
           />
         );
       default:

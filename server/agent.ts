@@ -15,6 +15,7 @@ import type {
   DehydrateResponse,
   HydrationReport,
   HydrationSnapshot,
+  PromptSettings,
   SocialCrawlerSettings,
   SourceEstimateResponse,
 } from '../src/types.ts';
@@ -693,6 +694,13 @@ function sanitizeSummary(summaryMarkdown: string) {
     .trim();
 }
 
+function cleanPromptInstruction(value?: string) {
+  return String(value || '')
+    .replace(/\r/g, '')
+    .trim()
+    .slice(0, 2400);
+}
+
 function sanitizeMermaid(raw: string, fallback: string) {
   const fenced = raw.match(/```(?:mermaid)?\s*([\s\S]*?)```/i);
   const candidate = (fenced?.[1] || raw)
@@ -938,17 +946,19 @@ async function buildFinalDigest(
   options?: {
     knowledgeContext?: string;
     dehydrationLevel?: number;
+    promptSettings?: PromptSettings;
   }
 ) {
   const preset = getDehydrationPreset(options?.dehydrationLevel);
   const digests = await summarizeChunks(profile, source, chunks);
   const serializedDigests = JSON.stringify(digests, null, 2);
   const knowledgeContext = options?.knowledgeContext?.trim() || '';
+  const customSummaryPrompt = cleanPromptInstruction(options?.promptSettings?.summaryPrompt);
 
   const text = await callAnthropic(
     profile,
     '你是中文“脱水阅读器”的核心摘要代理。只保留信息，不写套话，不写过程说明，不写自我解释。输出必须紧凑、可入库、可复用。',
-    `请根据来源信息和分块提要，输出严格 JSON：{"title":"中文标题","tags":["3-6个中文标签"],"summaryMarkdown":"Markdown 格式摘要，必须只包含 # 核心摘要 / # 结构拆解 / # 行动项 三个部分","keyClaims":["${preset.keyClaims} 条核心判断"],"visualSynthesis":[]}\n\n脱水强度：${preset.normalized}/100（${preset.title}）\n\n长度要求：\n1. 全文目标长度控制在 ${preset.targetChars} 个中文字符左右。\n2. # 核心摘要 保留 ${preset.coreBullets} 条最高信息密度要点。\n3. # 结构拆解 保留 ${preset.structureBullets} 条结构节点，只写层级、转折、因果、论证推进。\n4. # 行动项 最多 ${preset.actionBullets} 条，没有就写“- 无”。\n5. 脱水强度越高，越要删掉解释性修辞、背景铺垫、重复表述。\n\n通用要求：\n1. 标签要能支撑检索，优先提取主题、对象、方法、场景四类信息。\n2. 摘要里禁止出现“本文”“这篇文章主要讲”“当前”“建议配置”“处理说明”“已执行”等废话。\n3. 不要复述题目，不要写开场白，不要写总结句套话。\n4. 如果提供了知识库上下文，只把它作为背景对照，用来补充概念关系或避免重复，不要把旧条目硬塞进摘要。\n5. 输出必须能直接入库和二次检索。\n\n来源信息：\n- 标题：${source.title}\n- URL：${source.url}\n- 类型：${source.sourceType}\n- 摘要引子：${source.excerpt}\n\n知识库上下文：\n${knowledgeContext || '无'}\n\n分块提要：\n${serializedDigests}`,
+    `请根据来源信息和分块提要，输出严格 JSON：{"title":"中文标题","tags":["3-6个中文标签"],"summaryMarkdown":"Markdown 格式摘要，必须只包含 # 核心摘要 / # 结构拆解 / # 行动项 三个部分","keyClaims":["${preset.keyClaims} 条核心判断"],"visualSynthesis":[]}\n\n脱水强度：${preset.normalized}/100（${preset.title}）\n\n长度要求：\n1. 全文目标长度控制在 ${preset.targetChars} 个中文字符左右。\n2. # 核心摘要 保留 ${preset.coreBullets} 条最高信息密度要点。\n3. # 结构拆解 保留 ${preset.structureBullets} 条结构节点，只写层级、转折、因果、论证推进。\n4. # 行动项 最多 ${preset.actionBullets} 条，没有就写“- 无”。\n5. 脱水强度越高，越要删掉解释性修辞、背景铺垫、重复表述。\n\n通用要求：\n1. 标签要能支撑检索，优先提取主题、对象、方法、场景四类信息。\n2. 摘要里禁止出现“本文”“这篇文章主要讲”“当前”“建议配置”“处理说明”“已执行”等废话。\n3. 不要复述题目，不要写开场白，不要写总结句套话。\n4. 如果提供了知识库上下文，只把它作为背景对照，用来补充概念关系或避免重复，不要把旧条目硬塞进摘要。\n5. 输出必须能直接入库和二次检索。\n\n用户自定义脱水提示词：\n${customSummaryPrompt || '无'}\n\n来源信息：\n- 标题：${source.title}\n- URL：${source.url}\n- 类型：${source.sourceType}\n- 摘要引子：${source.excerpt}\n\n知识库上下文：\n${knowledgeContext || '无'}\n\n分块提要：\n${serializedDigests}`,
     1800
   );
 
@@ -1030,7 +1040,8 @@ async function verifyWithSearch(summary: FinalDigest, overrideQuery?: string) {
 
 export async function generateStructureDiagramForAnalysis(
   analysis: Pick<Analysis, 'title' | 'content' | 'source' | 'sourceUrl' | 'type'>,
-  profile?: AiProfile | null
+  profile?: AiProfile | null,
+  promptSettings?: PromptSettings
 ) {
   const fallback = {
     structureDiagram: {
@@ -1038,11 +1049,12 @@ export async function generateStructureDiagramForAnalysis(
       caption: '按条目中的结构线索生成。',
     },
   };
+  const customStructurePrompt = cleanPromptInstruction(promptSettings?.structurePrompt);
 
   const text = await callAnthropic(
     profile,
     '你是一个文章结构解析代理。只输出 JSON，不解释。不要输出 Mermaid 代码。',
-    `请把下面这篇条目的结构关系解析成节点和连线。输出严格 JSON：{"nodes":[{"id":"n1","label":"短标签","type":"section|claim|evidence|turn|result"}],"edges":[{"from":"n1","to":"n2","label":"关系词"}],"caption":"一句话说明结构图如何对应原文"}\n\n要求：\n1. 只输出 JSON，禁止 Markdown，禁止 Mermaid，禁止代码块。\n2. nodes 保留 4-8 个节点，必须来自原文结构，不能只写“原文/摘要/结论”。\n3. id 只能使用 n1、n2、n3 这种 ASCII 标识；edges 必须引用已有 id。\n4. label 控制在 4-14 个中文字符，去掉括号、冒号、引号、斜杠等符号。\n5. edges 表达章节推进、因果、转折、证据支撑或结论收束，label 控制在 2-6 个中文字符。\n6. 如果原文是并列结构，用同一上游节点分叉；如果是论证结构，用“问题→机制→证据→结果”的推进。\n\n条目信息：\n- 标题：${analysis.title}\n- 来源：${analysis.source}\n- 类型：${analysis.type}\n- URL：${analysis.sourceUrl || '无'}\n\n摘要正文：\n${analysis.content}`,
+    `请把下面这篇条目的结构关系解析成节点和连线。输出严格 JSON：{"nodes":[{"id":"n1","label":"短标签","type":"section|claim|evidence|turn|result"}],"edges":[{"from":"n1","to":"n2","label":"关系词"}],"caption":"一句话说明结构图如何对应原文"}\n\n要求：\n1. 只输出 JSON，禁止 Markdown，禁止 Mermaid，禁止代码块。\n2. nodes 保留 4-8 个节点，必须来自原文结构，不能只写“原文/摘要/结论”。\n3. id 只能使用 n1、n2、n3 这种 ASCII 标识；edges 必须引用已有 id。\n4. label 控制在 4-14 个中文字符，去掉括号、冒号、引号、斜杠等符号。\n5. edges 表达章节推进、因果、转折、证据支撑或结论收束，label 控制在 2-6 个中文字符。\n6. 如果原文是并列结构，用同一上游节点分叉；如果是论证结构，用“问题→机制→证据→结果”的推进。\n\n用户自定义结构图提示词：\n${customStructurePrompt || '无'}\n\n条目信息：\n- 标题：${analysis.title}\n- 来源：${analysis.source}\n- 类型：${analysis.type}\n- URL：${analysis.sourceUrl || '无'}\n\n摘要正文：\n${analysis.content}`,
     900
   );
 
@@ -1956,6 +1968,7 @@ export async function dehydrateUrl(input: DehydrateRequest): Promise<DehydrateRe
         digest = await buildFinalDigest(input.aiProfile, source, chunks, {
           knowledgeContext: serializeKnowledgeHits(knowledgeHits),
           dehydrationLevel,
+          promptSettings: input.promptSettings,
         });
         if (traceItem) {
           traceItem.status = 'completed';
@@ -1995,6 +2008,7 @@ export async function dehydrateUrl(input: DehydrateRequest): Promise<DehydrateRe
   const finalDigest = digest || await buildFinalDigest(input.aiProfile, source, chunks, {
     knowledgeContext: serializeKnowledgeHits(knowledgeHits),
     dehydrationLevel,
+    promptSettings: input.promptSettings,
   });
   const hydration = buildHydrationReport(
     source.markdown,

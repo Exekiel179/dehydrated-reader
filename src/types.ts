@@ -91,6 +91,11 @@ export interface SocialCrawlerSettings {
   wechatCacheFile: string;
 }
 
+export interface PromptSettings {
+  summaryPrompt: string;
+  structurePrompt: string;
+}
+
 export interface DehydrateOptions {
   verifyWithSearch: boolean;
   saveToKnowledgeBase: boolean;
@@ -102,6 +107,7 @@ export interface DehydrateRequest {
   options: DehydrateOptions;
   aiProfile?: AiProfile | null;
   socialCrawlerSettings?: SocialCrawlerSettings;
+  promptSettings?: PromptSettings;
 }
 
 export interface SourceEstimateResponse {

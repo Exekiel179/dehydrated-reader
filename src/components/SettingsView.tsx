@@ -7,6 +7,7 @@ import type {
   ConnectivityReport,
   FetchProvider,
   InterfaceMode,
+  PromptSettings,
   SocialCrawlerSettings,
   TrendMonitorSettings,
   TrendMonitorSource,
@@ -30,6 +31,8 @@ interface SettingsViewProps {
   onSaveUserProfile: (user: User) => void;
   socialCrawlerSettings: SocialCrawlerSettings;
   onSaveSocialCrawlerSettings: (settings: SocialCrawlerSettings) => void;
+  promptSettings: PromptSettings;
+  onSavePromptSettings: (settings: PromptSettings) => void;
 }
 
 const PAGE_STYLES: Array<{
@@ -156,6 +159,8 @@ export function SettingsView({
   onSaveUserProfile,
   socialCrawlerSettings,
   onSaveSocialCrawlerSettings,
+  promptSettings,
+  onSavePromptSettings,
 }: SettingsViewProps) {
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeProfileId) || profiles[0] || null,
@@ -169,6 +174,7 @@ export function SettingsView({
   const [connectivity, setConnectivity] = useState<ConnectivityReport | null>(null);
   const [userDraft, setUserDraft] = useState<User>(userProfile);
   const [socialDraft, setSocialDraft] = useState<SocialCrawlerSettings>(socialCrawlerSettings);
+  const [promptDraft, setPromptDraft] = useState<PromptSettings>(promptSettings);
   const [authAction, setAuthAction] = useState<'xhs' | 'douyin' | 'douyin-live' | 'wechat' | null>(null);
   const [socialHint, setSocialHint] = useState<string | null>(null);
   const [trendSettings, setTrendSettings] = useState<TrendMonitorSettings | null>(null);
@@ -192,6 +198,10 @@ export function SettingsView({
   useEffect(() => {
     setSocialDraft(socialCrawlerSettings);
   }, [socialCrawlerSettings]);
+
+  useEffect(() => {
+    setPromptDraft(promptSettings);
+  }, [promptSettings]);
 
   useEffect(() => {
     let cancelled = false;
@@ -407,6 +417,72 @@ export function SettingsView({
               </button>
             );
           })}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6">
+        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">提示词</p>
+            <h3 className="mt-1 font-headline text-3xl font-bold text-on-surface">脱水提示词</h3>
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-on-surface-variant">
+              这里的内容会作为附加约束注入脱水摘要和结构图生成。输出 JSON 格式、字段结构和 Mermaid 安全规则仍由系统保底。
+            </p>
+          </div>
+          <button
+            className="inline-flex items-center gap-2 rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-5 py-3 text-sm font-bold text-on-primary"
+            onClick={() => onSavePromptSettings(promptDraft)}
+            type="button"
+          >
+            <Save className="h-4 w-4" />
+            保存提示词
+          </button>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <label className="space-y-3">
+            <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">摘要脱水提示词</span>
+            <textarea
+              className="min-h-56 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm leading-7 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              onChange={(event) => setPromptDraft((current) => ({ ...current, summaryPrompt: event.target.value }))}
+              value={promptDraft.summaryPrompt}
+            />
+            <p className="text-xs leading-6 text-on-surface-variant">影响核心摘要、结构拆解、行动项、标签和关键判断。</p>
+          </label>
+
+          <label className="space-y-3">
+            <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">结构图提示词</span>
+            <textarea
+              className="min-h-56 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm leading-7 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              onChange={(event) => setPromptDraft((current) => ({ ...current, structurePrompt: event.target.value }))}
+              value={promptDraft.structurePrompt}
+            />
+            <p className="text-xs leading-6 text-on-surface-variant">影响结构节点、连线关系和图注。系统仍会把结构 JSON 转成安全 Mermaid。</p>
+          </label>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            className="rounded-lg border border-outline-variant/20 px-4 py-2 text-sm font-bold text-on-surface-variant hover:border-primary/25 hover:text-primary"
+            onClick={() => setPromptDraft(promptSettings)}
+            type="button"
+          >
+            撤销修改
+          </button>
+          <button
+            className="rounded-lg border border-outline-variant/20 px-4 py-2 text-sm font-bold text-on-surface-variant hover:border-primary/25 hover:text-primary"
+            onClick={() =>
+              setPromptDraft({
+                summaryPrompt:
+                  '只保留信息密度高的事实、判断、结构和行动线索。删除套话、过渡句、空泛形容、重复背景。摘要必须适合回看、标注和写入知识库。',
+                structurePrompt:
+                  '结构图必须表达文章自身的论证推进、层级关系、因果链或并列关系。不要画“原文到摘要”的通用流程图，节点必须来自当前条目的真实内容。',
+              })
+            }
+            type="button"
+          >
+            恢复默认
+          </button>
         </div>
       </section>
 

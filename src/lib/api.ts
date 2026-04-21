@@ -8,6 +8,7 @@ import type {
   RSSFeedsResponse,
   RSSImportResponse,
   RSSSubscription,
+  PromptSettings,
   SocialAuthCaptureResponse,
   SocialCrawlerSettings,
   SocialCrawlResponse,
@@ -71,13 +72,13 @@ export async function testProfileConnectivity(profile: AiProfile) {
   return response.json() as Promise<ConnectivityReport>;
 }
 
-export async function generateStructureDiagram(analysis: Analysis, aiProfile?: AiProfile | null) {
+export async function generateStructureDiagram(analysis: Analysis, aiProfile?: AiProfile | null, promptSettings?: PromptSettings) {
   const response = await fetch(`${API_BASE}/api/structure-diagram`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ analysis, aiProfile }),
+    body: JSON.stringify({ analysis, aiProfile, promptSettings }),
   });
 
   if (!response.ok) {

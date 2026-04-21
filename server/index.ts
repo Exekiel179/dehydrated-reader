@@ -61,6 +61,7 @@ app.post('/api/dehydrate', async (req, res) => {
       },
       aiProfile: body.aiProfile || null,
       socialCrawlerSettings: body.socialCrawlerSettings,
+      promptSettings: body.promptSettings,
     });
 
     res.json(payload);
@@ -94,7 +95,7 @@ app.post('/api/structure-diagram', async (req, res) => {
   }
 
   try {
-    const payload = await generateStructureDiagramForAnalysis(analysis, req.body?.aiProfile || null);
+    const payload = await generateStructureDiagramForAnalysis(analysis, req.body?.aiProfile || null, req.body?.promptSettings);
     res.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : '结构图生成失败。';
