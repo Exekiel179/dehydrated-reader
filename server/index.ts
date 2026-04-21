@@ -11,6 +11,7 @@ import {
   captureWechatAuth,
   crawlSocialProvider,
   discoverRssSubscriptions,
+  fetchRandomAvatar,
   fetchRssFeeds,
   getTrendMonitorSettings,
   getTrendOverview,
@@ -116,6 +117,16 @@ app.post('/api/test-profile', async (req, res) => {
     res.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : '联通性测试失败。';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/avatar/random', async (_, res) => {
+  try {
+    const payload = await fetchRandomAvatar();
+    res.json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '随机头像获取失败。';
     res.status(500).json({ error: message });
   }
 });

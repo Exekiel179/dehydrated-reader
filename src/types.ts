@@ -66,6 +66,11 @@ export interface User {
   keyInsights: number;
 }
 
+export interface RandomAvatarResponse {
+  avatarUrl: string;
+  source: string;
+}
+
 export interface AiProfile {
   id: string;
   name: string;

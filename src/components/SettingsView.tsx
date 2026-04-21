@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Eye, EyeOff, LoaderCircle, Palette, Plus, Save, Trash2, UserRound, Wrench } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, LoaderCircle, Palette, Plus, RefreshCw, Save, Trash2, UserRound, Wrench } from 'lucide-react';
 import type {
   AccentPreset,
   AiProfile,
@@ -13,7 +13,7 @@ import type {
   TrendMonitorSource,
   User,
 } from '@/src/types';
-import { captureSocialAuth, captureWechatAuth, fetchTrendMonitorSettings, openSocialLogin, saveTrendMonitorSettings } from '@/src/lib/api';
+import { captureSocialAuth, captureWechatAuth, fetchRandomAvatar, fetchTrendMonitorSettings, openSocialLogin, saveTrendMonitorSettings } from '@/src/lib/api';
 
 interface SettingsViewProps {
   profiles: AiProfile[];
@@ -172,6 +172,8 @@ export function SettingsView({
   const [showFirecrawlKey, setShowFirecrawlKey] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [connectivity, setConnectivity] = useState<ConnectivityReport | null>(null);
+  const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarHint, setAvatarHint] = useState<string | null>(null);
   const [userDraft, setUserDraft] = useState<User>(userProfile);
   const [socialDraft, setSocialDraft] = useState<SocialCrawlerSettings>(socialCrawlerSettings);
   const [promptDraft, setPromptDraft] = useState<PromptSettings>(promptSettings);
@@ -314,6 +316,28 @@ export function SettingsView({
             </label>
 
             <button
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-outline-variant/20 px-4 py-3 text-sm font-bold text-on-surface-variant transition hover:border-primary/25 hover:text-primary"
+              disabled={avatarLoading}
+              onClick={async () => {
+                try {
+                  setAvatarLoading(true);
+                  setAvatarHint(null);
+                  const payload = await fetchRandomAvatar();
+                  setUserDraft((current) => ({ ...current, avatarUrl: payload.avatarUrl }));
+                  setAvatarHint('已随机切换头像，保存后生效。');
+                } catch (error) {
+                  setAvatarHint(error instanceof Error ? error.message : '随机头像获取失败。');
+                } finally {
+                  setAvatarLoading(false);
+                }
+              }}
+              type="button"
+            >
+              {avatarLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              随机切换头像
+            </button>
+
+            <button
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-4 py-3 text-sm font-bold text-on-primary"
               onClick={() => onSaveUserProfile(userDraft)}
               type="button"
@@ -321,6 +345,7 @@ export function SettingsView({
               <Save className="h-4 w-4" />
               保存身份信息
             </button>
+            {avatarHint ? <p className="text-xs leading-6 text-on-surface-variant">{avatarHint}</p> : null}
           </div>
         </section>
 

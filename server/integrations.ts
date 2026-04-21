@@ -689,6 +689,33 @@ export async function importRssSubscription(url: string, category: RSSSubscripti
   return { subscription };
 }
 
+export async function fetchRandomAvatar() {
+  const endpoint = process.env.RANDOM_AVATAR_API_URL || 'https://v2.xxapi.cn/api/head?return=json';
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers: {
+      accept: 'application/json,text/plain,*/*',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`随机头像接口失败：${response.status} ${response.statusText}`);
+  }
+
+  const payload = await response.json().catch(() => null) as { code?: number; data?: string; msg?: string } | null;
+  const avatarUrl = payload?.data?.trim();
+  if (!avatarUrl || !/^https?:\/\//i.test(avatarUrl)) {
+    throw new Error(payload?.msg || '随机头像接口没有返回有效图片地址。');
+  }
+
+  return {
+    avatarUrl,
+    source: endpoint,
+  };
+}
+
 function pushUniqueCandidate(candidates: RssDiscoveryCandidate[], candidate: RssDiscoveryCandidate) {
   const url = candidate.url?.trim();
   if (!url || !/^https?:\/\//i.test(url)) {

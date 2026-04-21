@@ -10,6 +10,7 @@ import type {
   RSSImportResponse,
   RSSSubscription,
   PromptSettings,
+  RandomAvatarResponse,
   SocialAuthCaptureResponse,
   SocialCrawlerSettings,
   SocialCrawlResponse,
@@ -101,6 +102,22 @@ export async function deleteAnalysis(id: string) {
   }
 
   return response.json() as Promise<DeleteAnalysisResponse>;
+}
+
+export async function fetchRandomAvatar() {
+  const response = await fetch(`${API_BASE}/api/avatar/random`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: '随机头像获取失败。' })) as { error?: string };
+    throw new Error(error.error || '随机头像获取失败。');
+  }
+
+  return response.json() as Promise<RandomAvatarResponse>;
 }
 
 export async function fetchTrendOverview(limit = 24) {
