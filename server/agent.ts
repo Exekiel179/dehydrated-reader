@@ -587,7 +587,7 @@ function sanitizeNodeLabel(input: string) {
   return input
     .replace(/\\[nr]/g, ' ')
     .replace(/[`]+/g, ' ')
-    .replace(/["<>[\]{}]/g, '')
+    .replace(/["'<>[\]{}()（）]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 28) || '节点';
@@ -624,11 +624,65 @@ function sanitizeSummary(summaryMarkdown: string) {
 }
 
 function sanitizeMermaid(raw: string, fallback: string) {
-  const candidate = raw.trim();
-  if (!candidate.startsWith('flowchart') && !candidate.startsWith('graph') && !candidate.startsWith('mindmap')) {
+  const fenced = raw.match(/```(?:mermaid)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced?.[1] || raw)
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+
+  if (!candidate.startsWith('flowchart') && !candidate.startsWith('graph')) {
     return fallback;
   }
-  return candidate;
+
+  const lines = candidate.split('\n');
+  const firstLine = lines[0].replace(/^graph\b/i, 'flowchart').replace(/\b(LR|RL|BT)\b/i, 'TD');
+  const normalizedLines = [firstLine.startsWith('flowchart') ? firstLine : 'flowchart TD'];
+  let edgeCount = 0;
+
+  const normalizeNodeLabel = (label: string) =>
+    sanitizeNodeLabel(label)
+      .replace(/[|]/g, ' ')
+      .slice(0, 34);
+
+  const quoteNodeLabel = (line: string) =>
+    line
+      .replace(/\b([A-Za-z][\w-]*)\s*\[\s*"?([^\]"]+)"?\s*\]/g, (_match, id: string, label: string) => {
+        return `${id}["${normalizeNodeLabel(label)}"]`;
+      })
+      .replace(/\b([A-Za-z][\w-]*)\s*\(\s*"?([^()"]+)"?\s*\)/g, (_match, id: string, label: string) => {
+        return `${id}["${normalizeNodeLabel(label)}"]`;
+      })
+      .replace(/\b([A-Za-z][\w-]*)\s*\{\s*"?([^{}"]+)"?\s*\}/g, (_match, id: string, label: string) => {
+        return `${id}["${normalizeNodeLabel(label)}"]`;
+      });
+
+  for (const rawLine of lines.slice(1, 42)) {
+    if (
+      /^```/.test(rawLine) ||
+      /^classDef\b/.test(rawLine) ||
+      /^class\b/.test(rawLine) ||
+      /^style\b/.test(rawLine) ||
+      /^linkStyle\b/.test(rawLine)
+    ) {
+      continue;
+    }
+
+    const line = quoteNodeLabel(rawLine.replace(/；/g, ';'));
+    if (!/^[A-Za-z][\w-]*(?:\["[^"]+"\])?\s*(?:[-.=]+>|-->|---|-\.-)\s*[A-Za-z][\w-]*(?:\["[^"]+"\])?/.test(line)) {
+      if (/^[A-Za-z][\w-]*\["[^"]+"\]$/.test(line)) {
+        normalizedLines.push(line);
+      }
+      continue;
+    }
+
+    edgeCount += 1;
+    normalizedLines.push(line);
+  }
+
+  return edgeCount > 0 ? normalizedLines.join('\n') : fallback;
 }
 
 function extractJson<T>(raw: string): T {

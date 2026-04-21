@@ -4,6 +4,51 @@ interface MermaidDiagramProps {
   chart: string;
 }
 
+function cleanNodeLabel(label: string) {
+  return label
+    .replace(/\\[nr]/g, ' ')
+    .replace(/[`"'<>[\]{}()（）|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 34) || '节点';
+}
+
+function repairMermaidChart(chart: string) {
+  const fenced = chart.match(/```(?:mermaid)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced?.[1] || chart)
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!candidate.length) {
+    return chart;
+  }
+
+  const lines = candidate.map((line, index) => {
+    if (index === 0) {
+      return line.replace(/^graph\b/i, 'flowchart').replace(/\b(LR|RL|BT)\b/i, 'TD');
+    }
+
+    return line
+      .replace(/\b([A-Za-z][\w-]*)\s*\[\s*"?([^\]"]+)"?\s*\]/g, (_match, id: string, label: string) => {
+        return `${id}["${cleanNodeLabel(label)}"]`;
+      })
+      .replace(/\b([A-Za-z][\w-]*)\s*\(\s*"?([^()"]+)"?\s*\)/g, (_match, id: string, label: string) => {
+        return `${id}["${cleanNodeLabel(label)}"]`;
+      })
+      .replace(/\b([A-Za-z][\w-]*)\s*\{\s*"?([^{}"]+)"?\s*\}/g, (_match, id: string, label: string) => {
+        return `${id}["${cleanNodeLabel(label)}"]`;
+      });
+  });
+
+  if (!lines[0].startsWith('flowchart') && !lines[0].startsWith('graph')) {
+    lines.unshift('flowchart TD');
+  }
+
+  return lines.join('\n');
+}
+
 export function MermaidDiagram({ chart }: MermaidDiagramProps) {
   const id = useId().replace(/:/g, '-');
   const [svg, setSvg] = useState('');
@@ -20,7 +65,14 @@ export function MermaidDiagram({ chart }: MermaidDiagramProps) {
           securityLevel: 'loose',
           theme: 'neutral',
         });
-        const { svg: rendered } = await mermaid.render(`diagram-${id}`, chart);
+        let rendered = '';
+        try {
+          const result = await mermaid.render(`diagram-${id}`, chart);
+          rendered = result.svg;
+        } catch {
+          const result = await mermaid.render(`diagram-${id}-repaired`, repairMermaidChart(chart));
+          rendered = result.svg;
+        }
         if (!cancelled) {
           setSvg(rendered);
           setError(null);
