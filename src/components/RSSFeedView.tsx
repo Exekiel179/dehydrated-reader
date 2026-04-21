@@ -58,6 +58,17 @@ function itemMatches(item: RSSFeedItem, keyword: string) {
   );
 }
 
+function itemCardSpan(item: RSSFeedItem, index: number) {
+  const textLength = `${item.title}${item.excerpt}`.length;
+  if (item.coverImageUrl && textLength > 190) {
+    return 'md:col-span-2 xl:col-span-2';
+  }
+  if (index % 7 === 0 && textLength > 120) {
+    return 'md:col-span-2';
+  }
+  return '';
+}
+
 export function RSSFeedView({
   subscriptions,
   onSaveSubscriptions,
@@ -450,64 +461,77 @@ export function RSSFeedView({
           ) : null}
         </div>
 
-        <div className="grid gap-4">
-          {visibleItems.map((item) => (
-            <article key={item.id} className="rounded-xl border border-outline-variant/14 bg-surface-container-lowest p-5">
-              <div className="flex flex-col gap-4 lg:flex-row">
-                <div className="h-28 w-full shrink-0 overflow-hidden rounded-lg bg-surface-container-low lg:w-48">
-                  {item.coverImageUrl ? (
-                    <img alt={item.title} className="h-full w-full object-cover" referrerPolicy="no-referrer" src={item.coverImageUrl} />
-                  ) : item.sourceSiteUrl ? (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <img alt={item.subscriptionTitle} className="h-14 w-14 rounded-xl object-cover" src={faviconUrl(item.sourceSiteUrl)} />
+        <div className="grid auto-rows-[12px] grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {visibleItems.map((item, index) => {
+            const excerpt = item.excerpt || '该订阅项没有提供摘要，建议直接脱水正文。';
+            const spanRows = item.coverImageUrl ? (excerpt.length > 160 ? 'row-span-[28]' : 'row-span-[24]') : excerpt.length > 180 ? 'row-span-[24]' : 'row-span-[20]';
+            return (
+              <article
+                key={item.id}
+                className={`${spanRows} ${itemCardSpan(item, index)} group overflow-hidden rounded-xl border border-outline-variant/14 bg-surface-container-lowest shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(137,72,84,0.08)]`}
+              >
+                <div className="flex h-full flex-col">
+                  <div className={`relative overflow-hidden bg-surface-container-low ${item.coverImageUrl ? 'h-40' : 'h-20'}`}>
+                    {item.coverImageUrl ? (
+                      <img alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" referrerPolicy="no-referrer" src={item.coverImageUrl} />
+                    ) : item.sourceSiteUrl ? (
+                      <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,var(--color-primary)/10,transparent)]">
+                        <img alt={item.subscriptionTitle} className="h-12 w-12 rounded-xl object-cover" src={faviconUrl(item.sourceSiteUrl)} />
+                      </div>
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,var(--color-primary)/10,transparent)]">
+                        <Rss className="h-8 w-8 text-primary/70" />
+                      </div>
+                    )}
+                    <div className="absolute left-3 top-3 rounded-full bg-surface-container-lowest/90 px-2.5 py-1 text-[10px] font-bold text-primary">
+                      {CATEGORY_LABELS[item.subscriptionCategory]}
                     </div>
-                  ) : null}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-on-surface-variant">
-                    <span className="rounded-full bg-primary/8 px-2.5 py-1 font-bold text-primary">{item.subscriptionTitle}</span>
-                    <span>{CATEGORY_LABELS[item.subscriptionCategory]}</span>
-                    <span>{formatPublishedAt(item.publishedAt)}</span>
                   </div>
-                  <h3 className="mt-3 text-lg font-bold leading-7 text-on-surface">{item.title}</h3>
-                  <p className="mt-3 text-sm leading-7 text-on-surface-variant">{item.excerpt || '该订阅项没有提供摘要，建议直接脱水正文。'}</p>
 
-                  <div className="mt-4 flex flex-wrap items-center gap-4">
-                    <button
-                      className="inline-flex items-center gap-2 rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-4 py-2.5 text-sm font-bold text-on-primary"
-                      disabled={dehydratingUrls.includes(item.url)}
-                      onClick={async () => {
-                        try {
-                          setDehydratingUrls((current) => (current.includes(item.url) ? current : [...current, item.url]));
-                          await onDehydrateUrl(item.url);
-                        } finally {
-                          setDehydratingUrls((current) => current.filter((url) => url !== item.url));
-                        }
-                      }}
-                      type="button"
-                    >
-                      <Bolt className="h-4 w-4" />
-                      {dehydratingUrls.includes(item.url) ? '排队中...' : '脱水这条'}
-                    </button>
+                  <div className="flex min-h-0 flex-1 flex-col p-5">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-on-surface-variant">
+                      <span className="rounded-full bg-primary/8 px-2.5 py-1 font-bold text-primary">{item.subscriptionTitle}</span>
+                      <span>{formatPublishedAt(item.publishedAt)}</span>
+                    </div>
+                    <h3 className="mt-3 text-lg font-bold leading-7 text-on-surface">{item.title}</h3>
+                    <p className="mt-3 line-clamp-4 text-sm leading-7 text-on-surface-variant">{excerpt}</p>
 
-                    <a className="inline-flex items-center gap-2 text-sm font-bold text-on-surface-variant hover:text-primary" href={item.url} rel="noreferrer" target="_blank">
-                      打开原文 <ExternalLink className="h-4 w-4" />
-                    </a>
+                    <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
+                      <button
+                        className="inline-flex items-center gap-2 rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-3 py-2 text-xs font-bold text-on-primary"
+                        disabled={dehydratingUrls.includes(item.url)}
+                        onClick={async () => {
+                          try {
+                            setDehydratingUrls((current) => (current.includes(item.url) ? current : [...current, item.url]));
+                            await onDehydrateUrl(item.url);
+                          } finally {
+                            setDehydratingUrls((current) => current.filter((url) => url !== item.url));
+                          }
+                        }}
+                        type="button"
+                      >
+                        <Bolt className="h-3.5 w-3.5" />
+                        {dehydratingUrls.includes(item.url) ? '排队中' : '脱水'}
+                      </button>
 
-                    <button
-                      className="inline-flex items-center gap-2 text-sm font-bold text-on-surface-variant hover:text-primary"
-                      onClick={() => onIgnoreItem(item.id)}
-                      type="button"
-                    >
-                      <EyeOff className="h-4 w-4" />
-                      忽略
-                    </button>
+                      <a className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant hover:text-primary" href={item.url} rel="noreferrer" target="_blank">
+                        原文 <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+
+                      <button
+                        className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant hover:text-primary"
+                        onClick={() => onIgnoreItem(item.id)}
+                        type="button"
+                      >
+                        <EyeOff className="h-3.5 w-3.5" />
+                        忽略
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
 
           {!loading && !visibleItems.length ? (
             <div className="rounded-xl border border-dashed border-outline-variant/20 bg-surface-container-low px-6 py-16 text-center">

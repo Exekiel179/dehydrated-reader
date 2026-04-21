@@ -65,6 +65,41 @@ interface RssDiscoveryCandidate {
   description?: string;
 }
 
+const RSS_DISCOVERY_SEEDS: Record<RSSSubscription['category'], RssDiscoveryCandidate[]> = {
+  psychology: [
+    { title: 'Psychology Today', url: 'https://www.psychologytoday.com/us/rss', siteUrl: 'https://www.psychologytoday.com' },
+    { title: 'BPS Research Digest', url: 'https://www.bps.org.uk/research-digest/rss.xml', siteUrl: 'https://www.bps.org.uk/research-digest' },
+    { title: 'Mind Hacks', url: 'https://mindhacks.com/feed/', siteUrl: 'https://mindhacks.com' },
+    { title: 'PsyPost', url: 'https://www.psypost.org/feed/', siteUrl: 'https://www.psypost.org' },
+  ],
+  'psychology-journal': [
+    { title: 'APA PsycPORT', url: 'https://www.apa.org/news/psycport/psycport-rss.xml', siteUrl: 'https://www.apa.org/news/psycport' },
+    { title: 'Frontiers in Psychology', url: 'https://www.frontiersin.org/journals/psychology/rss', siteUrl: 'https://www.frontiersin.org/journals/psychology' },
+    { title: 'Nature Human Behaviour', url: 'https://www.nature.com/nathumbehav.rss', siteUrl: 'https://www.nature.com/nathumbehav' },
+  ],
+  ai: [
+    { title: 'arXiv cs.AI', url: 'https://export.arxiv.org/rss/cs.AI', siteUrl: 'https://arxiv.org/list/cs.AI/recent' },
+    { title: 'arXiv cs.CL', url: 'https://export.arxiv.org/rss/cs.CL', siteUrl: 'https://arxiv.org/list/cs.CL/recent' },
+    { title: 'Hugging Face Blog', url: 'https://huggingface.co/blog/feed.xml', siteUrl: 'https://huggingface.co/blog' },
+    { title: 'Google AI Blog', url: 'https://blog.google/technology/ai/rss/', siteUrl: 'https://blog.google/technology/ai/' },
+  ],
+  'ai-product': [
+    { title: 'OpenAI Blog', url: 'https://openai.com/news/rss.xml', siteUrl: 'https://openai.com/news' },
+    { title: 'Anthropic News', url: 'https://www.anthropic.com/news/rss.xml', siteUrl: 'https://www.anthropic.com/news' },
+    { title: 'Product Hunt AI', url: 'https://www.producthunt.com/feed?category=artificial-intelligence', siteUrl: 'https://www.producthunt.com' },
+  ],
+  github: [
+    { title: 'GitHub Blog', url: 'https://github.blog/feed/', siteUrl: 'https://github.blog' },
+    { title: 'GitHub Changelog', url: 'https://github.blog/changelog/feed/', siteUrl: 'https://github.blog/changelog' },
+    { title: 'Hacker News', url: 'https://hnrss.org/frontpage', siteUrl: 'https://news.ycombinator.com' },
+  ],
+  custom: [
+    { title: 'Hacker News', url: 'https://hnrss.org/frontpage', siteUrl: 'https://news.ycombinator.com' },
+    { title: 'GitHub Blog', url: 'https://github.blog/feed/', siteUrl: 'https://github.blog' },
+    { title: 'arXiv cs.AI', url: 'https://export.arxiv.org/rss/cs.AI', siteUrl: 'https://arxiv.org/list/cs.AI/recent' },
+  ],
+};
+
 interface ParsedTrendItem {
   title: string;
   url?: string;
@@ -840,6 +875,58 @@ async function collectTavilyRssCandidates(query: string) {
   }
 }
 
+async function collectSearchPageRssCandidates(query: string) {
+  const candidates: RssDiscoveryCandidate[] = [];
+  const searchUrls = [
+    `https://www.bing.com/search?q=${encodeURIComponent(`${query} RSS feed`)}`,
+    `https://duckduckgo.com/html/?q=${encodeURIComponent(`${query} RSS feed`)}`,
+  ];
+
+  for (const searchUrl of searchUrls) {
+    try {
+      const response = await fetch(searchUrl, {
+        headers: {
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          accept: 'text/html,application/xhtml+xml',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) {
+        continue;
+      }
+      const html = await response.text();
+      const linkPattern = /\bhref=["'](https?:\/\/[^"']+)["']/gi;
+      for (const match of html.matchAll(linkPattern)) {
+        const rawUrl = match[1]
+          .replace(/&amp;/g, '&')
+          .replace(/^https?:\/\/www\.bing\.com\/ck\/a\?.*?&u=([^&]+).*$/i, (_, encoded: string) => {
+            try {
+              return Buffer.from(decodeURIComponent(encoded).replace(/^a1/i, ''), 'base64').toString('utf8');
+            } catch {
+              return '';
+            }
+          });
+        if (!rawUrl || /bing\.com|duckduckgo\.com|microsoft\.com/.test(rawUrl)) {
+          continue;
+        }
+        pushUniqueCandidate(candidates, {
+          title: query,
+          url: rawUrl,
+          siteUrl: rawUrl,
+          description: `搜索发现：${query}`,
+        });
+        if (candidates.length >= 10) {
+          return candidates;
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return candidates;
+}
+
 export async function discoverRssSubscriptions(
   query: string,
   category: RSSSubscription['category'] = 'custom',
@@ -853,10 +940,17 @@ export async function discoverRssSubscriptions(
   const baseCandidates: RssDiscoveryCandidate[] = [];
   const aiCandidates = await collectAiRssCandidates(keyword, category, profile);
   const tavilyCandidates = await collectTavilyRssCandidates(keyword);
-  [...aiCandidates, ...tavilyCandidates].forEach((candidate) => pushUniqueCandidate(baseCandidates, candidate));
+  const searchCandidates = await collectSearchPageRssCandidates(keyword);
+  const seedCandidates = [
+    ...(RSS_DISCOVERY_SEEDS[category] || []),
+    ...(category === 'custom' ? [] : RSS_DISCOVERY_SEEDS.custom),
+  ];
+  [...aiCandidates, ...tavilyCandidates, ...searchCandidates, ...seedCandidates].forEach((candidate) =>
+    pushUniqueCandidate(baseCandidates, candidate)
+  );
 
   if (!baseCandidates.length) {
-    throw new Error('没有拿到候选 RSS 源。请先配置 AI 接口，或换一个更具体的关键词。');
+    throw new Error('没有拿到候选 RSS 源。请换一个更具体的关键词。');
   }
 
   const expandedCandidates: RssDiscoveryCandidate[] = [];
