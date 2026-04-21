@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bolt, ExternalLink, EyeOff, LoaderCircle, Plus, RefreshCw, Rss, Search, Trash2 } from 'lucide-react';
-import type { RSSFeedItem, RSSSubscription } from '@/src/types';
-import { fetchRssFeeds, importRssSubscription } from '@/src/lib/api';
+import type { AiProfile, RSSFeedItem, RSSSubscription } from '@/src/types';
+import { discoverRssSubscriptions, fetchRssFeeds, importRssSubscription } from '@/src/lib/api';
 import { DEFAULT_RSS_SUBSCRIPTIONS } from '@/src/rssPresets';
 
 interface RSSFeedViewProps {
@@ -10,6 +10,7 @@ interface RSSFeedViewProps {
   ignoredItemIds: string[];
   onIgnoreItem: (id: string) => void;
   onDehydrateUrl: (url: string) => Promise<void>;
+  activeProfile?: AiProfile | null;
 }
 
 const CATEGORY_LABELS: Record<RSSSubscription['category'] | 'all', string> = {
@@ -63,6 +64,7 @@ export function RSSFeedView({
   ignoredItemIds,
   onIgnoreItem,
   onDehydrateUrl,
+  activeProfile,
 }: RSSFeedViewProps) {
   const [items, setItems] = useState<RSSFeedItem[]>([]);
   const [resolvedSubscriptions, setResolvedSubscriptions] = useState<RSSSubscription[]>(subscriptions);
@@ -74,6 +76,10 @@ export function RSSFeedView({
   const [importUrl, setImportUrl] = useState('');
   const [importCategory, setImportCategory] = useState<RSSSubscription['category']>('custom');
   const [importing, setImporting] = useState(false);
+  const [aiQuery, setAiQuery] = useState('');
+  const [aiCategory, setAiCategory] = useState<RSSSubscription['category']>('custom');
+  const [aiSearching, setAiSearching] = useState(false);
+  const [aiResults, setAiResults] = useState<RSSSubscription[]>([]);
   const [dehydratingUrls, setDehydratingUrls] = useState<string[]>([]);
   const subscriptionBase = resolvedSubscriptions.length ? resolvedSubscriptions : subscriptions;
 
@@ -224,6 +230,111 @@ export function RSSFeedView({
 
         {feedHint ? <p className="mt-4 text-sm leading-7 text-on-surface-variant">{feedHint}</p> : null}
         {error ? <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">{error}</div> : null}
+      </section>
+
+      <section className="mt-6 rounded-xl border border-outline-variant/14 bg-surface-container-lowest p-6">
+        <div className="mb-5 flex flex-col gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">AI 发现</p>
+          <h2 className="text-2xl font-bold tracking-tight text-on-surface">按关键词搜索 RSS 订阅</h2>
+          <p className="max-w-3xl text-sm leading-7 text-on-surface-variant">
+            输入主题后，AI 会给出候选信息源，后端会实际校验 RSS/Atom 是否可读，只把可用结果放在这里。
+          </p>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_180px_auto]">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant/45" />
+            <input
+              className="w-full rounded-lg border border-outline-variant/16 bg-surface-container-low px-10 py-3 text-sm outline-none transition focus:border-primary/20 focus:ring-2 focus:ring-primary/10"
+              onChange={(event) => setAiQuery(event.target.value)}
+              placeholder="例如：认知心理学、AI Agent、产品增长、机器学习论文"
+              value={aiQuery}
+            />
+          </label>
+
+          <select
+            className="rounded-lg border border-outline-variant/16 bg-surface-container-low px-4 py-3 text-sm outline-none transition focus:border-primary/20 focus:ring-2 focus:ring-primary/10"
+            onChange={(event) => setAiCategory(event.target.value as RSSSubscription['category'])}
+            value={aiCategory}
+          >
+            <option value="custom">自定义</option>
+            <option value="psychology">心理学</option>
+            <option value="psychology-journal">心理学顶刊</option>
+            <option value="ai">人工智能</option>
+            <option value="ai-product">AI 产品</option>
+            <option value="github">GitHub 趋势</option>
+          </select>
+
+          <button
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-5 py-3 text-sm font-bold text-on-primary"
+            disabled={aiSearching || !aiQuery.trim()}
+            onClick={async () => {
+              try {
+                setAiSearching(true);
+                setError(null);
+                setFeedHint(null);
+                const response = await discoverRssSubscriptions({
+                  query: aiQuery,
+                  category: aiCategory,
+                  aiProfile: activeProfile,
+                });
+                setAiResults(response.subscriptions);
+                setFeedHint(response.message);
+              } catch (nextError) {
+                setError(nextError instanceof Error ? nextError.message : 'RSS 搜索失败。');
+              } finally {
+                setAiSearching(false);
+              }
+            }}
+            type="button"
+          >
+            {aiSearching ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            AI 搜索
+          </button>
+        </div>
+
+        {aiResults.length ? (
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {aiResults.map((subscription) => {
+              const exists = subscriptionBase.some((item) => item.url === subscription.url || item.id === subscription.id);
+              return (
+                <article key={subscription.id} className="rounded-lg border border-outline-variant/14 bg-surface p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-container-low">
+                      {subscription.siteUrl ? (
+                        <img alt={subscription.title} className="h-7 w-7 rounded-md object-cover" src={faviconUrl(subscription.siteUrl)} />
+                      ) : (
+                        <Rss className="h-5 w-5 text-primary" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-sm font-bold text-on-surface">{subscription.title}</h3>
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-on-surface-variant">{subscription.description || subscription.url}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <span className="truncate text-[11px] text-on-surface-variant/70">{subscription.url}</span>
+                    <button
+                      className={`shrink-0 rounded-lg px-3 py-2 text-xs font-bold ${
+                        exists
+                          ? 'border border-outline-variant/16 text-on-surface-variant'
+                          : 'bg-primary/10 text-primary hover:bg-primary hover:text-on-primary'
+                      }`}
+                      disabled={exists}
+                      onClick={() => {
+                        mergeSubscriptions([...subscriptionBase, subscription]);
+                        setFeedHint(`已加入 ${subscription.title}。`);
+                      }}
+                      type="button"
+                    >
+                      {exists ? '已存在' : '加入'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
       </section>
 
       <section className="mt-8">

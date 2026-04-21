@@ -10,6 +10,7 @@ import {
   captureBrowserAuth,
   captureWechatAuth,
   crawlSocialProvider,
+  discoverRssSubscriptions,
   fetchRssFeeds,
   getTrendMonitorSettings,
   getTrendOverview,
@@ -182,6 +183,22 @@ app.post('/api/rss/import', async (req, res) => {
     res.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'RSS 导入失败。';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/rss/discover', async (req, res) => {
+  const query = req.body?.query;
+  if (!query || typeof query !== 'string') {
+    res.status(400).json({ error: '缺少搜索关键词。' });
+    return;
+  }
+
+  try {
+    const payload = await discoverRssSubscriptions(query, req.body?.category || 'custom', req.body?.aiProfile || null);
+    res.json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'RSS 搜索失败。';
     res.status(500).json({ error: message });
   }
 });

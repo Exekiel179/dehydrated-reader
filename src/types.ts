@@ -224,6 +224,17 @@ export interface RSSImportResponse {
   subscription: RSSSubscription;
 }
 
+export interface RSSDiscoveryResponse {
+  query: string;
+  category: RSSSubscription['category'];
+  subscriptions: RSSSubscription[];
+  rejected: Array<{
+    url: string;
+    reason: string;
+  }>;
+  message: string;
+}
+
 export interface RSSFeedsResponse {
   subscriptions: RSSSubscription[];
   items: RSSFeedItem[];

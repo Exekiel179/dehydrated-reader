@@ -6,6 +6,7 @@ import type {
   DehydrateResponse,
   DeleteAnalysisResponse,
   RSSFeedsResponse,
+  RSSDiscoveryResponse,
   RSSImportResponse,
   RSSSubscription,
   PromptSettings,
@@ -169,6 +170,27 @@ export async function importRssSubscription(url: string, category: RSSSubscripti
   }
 
   return response.json() as Promise<RSSImportResponse>;
+}
+
+export async function discoverRssSubscriptions(payload: {
+  query: string;
+  category: RSSSubscription['category'];
+  aiProfile?: AiProfile | null;
+}) {
+  const response = await fetch(`${API_BASE}/api/rss/discover`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'RSS 搜索失败。' })) as { error?: string };
+    throw new Error(error.error || 'RSS 搜索失败。');
+  }
+
+  return response.json() as Promise<RSSDiscoveryResponse>;
 }
 
 export async function fetchRssFeeds(subscriptions: RSSSubscription[], perFeedLimit = 4) {

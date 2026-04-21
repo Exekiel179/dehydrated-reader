@@ -628,6 +628,7 @@ export default function App() {
       case 'rss-feed':
         return (
           <RSSFeedView
+            activeProfile={activeProfile}
             ignoredItemIds={ignoredFeedItemIds}
             onDehydrateUrl={(url) =>
               handleCreateAnalysis({
