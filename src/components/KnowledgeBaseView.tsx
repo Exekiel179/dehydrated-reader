@@ -100,10 +100,14 @@ function DeleteButton({ id, onDelete }: { id: string; onDelete: (id: string) => 
 
 function WaterfallNoteCard({
   analysis,
+  expanded,
+  onToggleExpanded,
   onSelect,
   onDelete,
 }: {
   analysis: Analysis;
+  expanded: boolean;
+  onToggleExpanded: (id: string) => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
 }) {
@@ -115,7 +119,7 @@ function WaterfallNoteCard({
   return (
     <article className="group mb-6 break-inside-avoid overflow-hidden rounded-lg border border-outline-variant/14 bg-surface-container-lowest shadow-[0_10px_24px_rgba(137,72,84,0.06)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(137,72,84,0.1)]">
       {hasCover ? (
-        <button className="block w-full text-left" onClick={() => onSelect(analysis.id)} type="button">
+        <button className="block w-full text-left" onClick={() => onToggleExpanded(analysis.id)} type="button">
           <div className="relative overflow-hidden bg-surface-container">
             <img
               src={analysis.coverImageUrl}
@@ -137,43 +141,62 @@ function WaterfallNoteCard({
         </button>
       ) : null}
 
+      {expanded || !hasCover ? (
       <div className="p-4">
-        <div className="mb-3 flex items-start justify-between gap-3">
+        <div className={cn('flex items-start justify-between gap-3', expanded ? 'mb-3' : 'mb-0')}>
           <div className="flex min-w-0 items-center gap-3">
             <div className="rounded-lg bg-surface-container p-2 text-primary">
               <Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              {!hasCover ? <p className="line-clamp-2 text-lg font-headline font-extrabold leading-7 text-on-surface">{analysis.title}</p> : null}
+              {!hasCover ? (
+                <button className="line-clamp-2 text-left text-lg font-headline font-extrabold leading-7 text-on-surface" onClick={() => onToggleExpanded(analysis.id)} type="button">
+                  {analysis.title}
+                </button>
+              ) : null}
               <p className="text-xs text-on-surface-variant">{analysis.source}</p>
             </div>
           </div>
           <DeleteButton id={analysis.id} onDelete={onDelete} />
         </div>
 
-        <button className="w-full text-left" onClick={() => onSelect(analysis.id)} type="button">
-          <p className="text-sm leading-7 text-on-surface-variant">{preview}</p>
-        </button>
+        {expanded ? (
+          <>
+            <button className="w-full text-left" onClick={() => onToggleExpanded(analysis.id)} type="button">
+              <p className="text-sm leading-7 text-on-surface-variant">{preview}</p>
+            </button>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {analysis.tags.slice(0, 4).map((tag) => (
-            <span key={tag} className="rounded-md bg-surface-container-high px-2.5 py-1 text-[10px] font-medium text-on-surface-variant">
-              {tag}
-            </span>
-          ))}
-          <span className="rounded-md bg-primary/8 px-2.5 py-1 text-[10px] font-bold text-primary">
-            {dehydrationLevel}/100
-          </span>
-        </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {analysis.tags.slice(0, 4).map((tag) => (
+                <span key={tag} className="rounded-md bg-surface-container-high px-2.5 py-1 text-[10px] font-medium text-on-surface-variant">
+                  {tag}
+                </span>
+              ))}
+              <span className="rounded-md bg-primary/8 px-2.5 py-1 text-[10px] font-bold text-primary">
+                {dehydrationLevel}/100
+              </span>
+            </div>
 
-        <div className="mt-4 flex items-center justify-between gap-3 border-t border-outline-variant/12 pt-4">
-          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-variant/55">{analysis.readTime}</span>
-          <button className="inline-flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.18em] text-primary transition-all group-hover:gap-2" onClick={() => onSelect(analysis.id)} type="button">
-            查看详情
+            <div className="mt-4 flex items-center justify-between gap-3 border-t border-outline-variant/12 pt-4">
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-variant/55">{analysis.readTime}</span>
+              <button className="inline-flex items-center gap-1 text-xs font-extrabold uppercase tracking-[0.18em] text-primary transition-all group-hover:gap-2" onClick={() => onSelect(analysis.id)} type="button">
+                查看完整详情
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </>
+        ) : (
+          <button
+            className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-primary"
+            onClick={() => onToggleExpanded(analysis.id)}
+            type="button"
+          >
+            展开
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
-        </div>
+        )}
       </div>
+      ) : null}
     </article>
   );
 }
@@ -182,6 +205,7 @@ export function KnowledgeBaseView({ analyses, onSelect, onDelete }: KnowledgeBas
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<LibraryFilter>('all');
   const [selectedTag, setSelectedTag] = useState<string>('全部');
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
 
   const baseFiltered = useMemo(() => {
     return analyses.filter((analysis) => activeFilter === 'all' || mapTypeToFilter(analysis.type) === activeFilter);
@@ -209,7 +233,11 @@ export function KnowledgeBaseView({ analyses, onSelect, onDelete }: KnowledgeBas
     return [...filteredAnalyses].sort((left, right) => right.id.localeCompare(left.id));
   }, [filteredAnalyses]);
 
-  const imageAnalyses = useMemo(() => sortedAnalyses.filter((analysis) => Boolean(analysis.coverImageUrl)), [sortedAnalyses]);
+  const pinnedAnalyses = useMemo(() => sortedAnalyses.filter((analysis) => Boolean(analysis.coverImageUrl)).slice(0, 3), [sortedAnalyses]);
+
+  const toggleExpanded = (key: string) => {
+    setExpandedKeys((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
+  };
 
   if (!analyses.length) {
     return (
@@ -291,19 +319,26 @@ export function KnowledgeBaseView({ analyses, onSelect, onDelete }: KnowledgeBas
         </div>
       </section>
 
-      {imageAnalyses.length ? (
+      {pinnedAnalyses.length ? (
         <section className="mb-10 space-y-4">
           <div>
-            <h2 className="text-2xl font-headline font-extrabold tracking-tight text-on-surface">图像笔记墙</h2>
+            <h2 className="text-2xl font-headline font-extrabold tracking-tight text-on-surface">置顶笔记</h2>
             <p className="mt-2 text-sm leading-7 text-on-surface-variant">
-              优先使用抓到的网页原图做封面，把带图条目先铺成一面真正的瀑布流笔记墙。
+              优先把带原图的最近条目放在这里，作为当前知识库的快速入口。
             </p>
           </div>
 
           <div className="rounded-lg border border-outline-variant/14 bg-surface px-4 py-4 md:px-5">
-            <div className="columns-1 gap-6 md:columns-2 2xl:columns-3">
-              {imageAnalyses.map((analysis) => (
-                <WaterfallNoteCard key={`image-wall-${analysis.id}`} analysis={analysis} onDelete={onDelete} onSelect={onSelect} />
+            <div className="grid items-start gap-5 lg:grid-cols-3">
+              {pinnedAnalyses.map((analysis) => (
+                <WaterfallNoteCard
+                  key={`pinned-${analysis.id}`}
+                  analysis={analysis}
+                  expanded={expandedKeys.includes(`pinned-${analysis.id}`)}
+                  onDelete={onDelete}
+                  onSelect={onSelect}
+                  onToggleExpanded={() => toggleExpanded(`pinned-${analysis.id}`)}
+                />
               ))}
             </div>
           </div>
@@ -315,14 +350,21 @@ export function KnowledgeBaseView({ analyses, onSelect, onDelete }: KnowledgeBas
           <div>
             <h2 className="text-2xl font-headline font-extrabold tracking-tight text-on-surface">全部笔记</h2>
             <p className="mt-2 text-sm leading-7 text-on-surface-variant">
-              所有脱水条目统一进入瀑布流笔记墙，保留图像、标签、摘要和删除同步能力。
+              其余脱水条目统一进入瀑布流，保留图像、标签、摘要和删除同步能力。
             </p>
           </div>
 
           <div className="rounded-lg border border-outline-variant/14 bg-surface px-4 py-4 md:px-5">
             <div className="columns-1 gap-6 md:columns-2 2xl:columns-3">
               {sortedAnalyses.map((analysis) => (
-                <WaterfallNoteCard key={analysis.id} analysis={analysis} onDelete={onDelete} onSelect={onSelect} />
+                <WaterfallNoteCard
+                  key={analysis.id}
+                  analysis={analysis}
+                  expanded={expandedKeys.includes(`all-${analysis.id}`)}
+                  onDelete={onDelete}
+                  onSelect={onSelect}
+                  onToggleExpanded={() => toggleExpanded(`all-${analysis.id}`)}
+                />
               ))}
             </div>
           </div>

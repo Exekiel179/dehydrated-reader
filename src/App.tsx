@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { Github, Mail } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { TopAppBar } from './components/TopAppBar';
 import { ViewType, Analysis, AiProfile, ColorTheme, AccentPreset, RSSSubscription, SocialCrawlerSettings, PromptSettings } from './types';
@@ -13,7 +14,7 @@ import { KnowledgeBaseView } from './components/KnowledgeBaseView';
 import { KnowledgeSearchView } from './components/KnowledgeSearchView';
 import { TrendTrackerView } from './components/TrendTrackerView';
 import { SocialCrawlerView } from './components/SocialCrawlerView';
-import { deleteAnalysis, estimateSource, generateStructureDiagram, requestDehydration, testProfileConnectivity } from './lib/api';
+import { deleteAnalysis, estimateSource, generateInterestProfile, generateOutputDraft, generateStructureDiagram, requestDehydration, testProfileConnectivity } from './lib/api';
 import { DEFAULT_RSS_SUBSCRIPTIONS } from './rssPresets';
 import {
   ACCENT_PRESET_STORAGE_KEY,
@@ -39,6 +40,24 @@ const DEFAULT_PROMPT_SETTINGS: PromptSettings = {
     '只保留信息密度高的事实、判断、结构和行动线索。删除套话、过渡句、空泛形容、重复背景。摘要必须适合回看、标注和写入知识库。',
   structurePrompt:
     '结构图必须表达文章自身的论证推进、层级关系、因果链或并列关系。不要画“原文到摘要”的通用流程图，节点必须来自当前条目的真实内容。',
+  outputWechatPrompt:
+    '基于多篇脱水素材聚合成一篇公众号长文。要有明确主张、真实论据链、可读的段落推进，不要堆摘要，不要营销腔。适合知识型读者和产品/技术/心理学交叉读者。',
+  outputXhsPrompt:
+    '基于素材生成小红书笔记。标题要有反差或问题感，正文要场景化、口语但不空泛，给出极简方法论，结尾留一个讨论问题。不要夸张承诺，不要伪造个人经历。',
+  outputArticlePrompt:
+    '基于素材生成一篇通用深度文章。强调问题意识、概念澄清、结构化论证和行动启发。保留事实边界，不把不同文章的观点硬揉成同一个结论。',
+  outputWechatHtmlPrompt:
+    '把公众号正文排成可粘贴到微信编辑器的 HTML。不要渲染 H1 标题；使用内联样式；用导语块、分节标题、重点卡片、引用块增强阅读节奏；避免花哨动效和外链 CSS。',
+  outputImagePrompt:
+    '为聚合文章生成封面/配图提示词。中文文字要少，画面要表达核心隐喻；优先 16:9 公众号封面和 3:4 小红书封面；风格克制、信息清楚。',
+  outputVideoPrompt:
+    '为聚合文章生成短视频脚本或生视频提示词。用 5-7 个镜头表达问题、冲突、结构和结论；画面提示要具体，避免抽象空话。',
+  imageApiBaseUrl: '',
+  imageApiKey: '',
+  imageApiModel: '',
+  videoApiBaseUrl: '',
+  videoApiKey: '',
+  videoApiModel: '',
 };
 
 const DEFAULT_SOCIAL_CRAWLER_SETTINGS: SocialCrawlerSettings = {
@@ -107,6 +126,18 @@ function normalizePromptSettings(settings: Partial<PromptSettings> | null | unde
   return {
     summaryPrompt: String(settings?.summaryPrompt || DEFAULT_PROMPT_SETTINGS.summaryPrompt),
     structurePrompt: String(settings?.structurePrompt || DEFAULT_PROMPT_SETTINGS.structurePrompt),
+    outputWechatPrompt: String(settings?.outputWechatPrompt || DEFAULT_PROMPT_SETTINGS.outputWechatPrompt),
+    outputXhsPrompt: String(settings?.outputXhsPrompt || DEFAULT_PROMPT_SETTINGS.outputXhsPrompt),
+    outputArticlePrompt: String(settings?.outputArticlePrompt || DEFAULT_PROMPT_SETTINGS.outputArticlePrompt),
+    outputWechatHtmlPrompt: String(settings?.outputWechatHtmlPrompt || DEFAULT_PROMPT_SETTINGS.outputWechatHtmlPrompt),
+    outputImagePrompt: String(settings?.outputImagePrompt || DEFAULT_PROMPT_SETTINGS.outputImagePrompt),
+    outputVideoPrompt: String(settings?.outputVideoPrompt || DEFAULT_PROMPT_SETTINGS.outputVideoPrompt),
+    imageApiBaseUrl: String(settings?.imageApiBaseUrl || ''),
+    imageApiKey: String(settings?.imageApiKey || ''),
+    imageApiModel: String(settings?.imageApiModel || ''),
+    videoApiBaseUrl: String(settings?.videoApiBaseUrl || ''),
+    videoApiKey: String(settings?.videoApiKey || ''),
+    videoApiModel: String(settings?.videoApiModel || ''),
   };
 }
 
@@ -320,6 +351,7 @@ export default function App() {
       return mockAnalyses;
     }
   });
+  const analysesRef = useRef<Analysis[]>(analyses);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiProfiles, setAiProfiles] = useState<AiProfile[]>(() => {
     if (typeof window === 'undefined') {
@@ -478,6 +510,7 @@ export default function App() {
                 aiProfile: job.aiProfile,
                 socialCrawlerSettings: job.socialCrawlerSettings,
                 promptSettings: job.promptSettings,
+                existingTags: Array.from(new Set(analysesRef.current.flatMap((analysis) => analysis.tags))).slice(0, 80),
               })).analysis
             : buildAnalysis(job.source, Date.now(), job.options.dehydrationLevel);
 
@@ -575,6 +608,7 @@ export default function App() {
   }, [analyses, userProfile]);
 
   useEffect(() => {
+    analysesRef.current = analyses;
     window.localStorage.setItem(ANALYSES_STORAGE_KEY, JSON.stringify(analyses));
   }, [analyses]);
 
@@ -641,6 +675,7 @@ export default function App() {
             user={derivedUser}
             recentAnalyses={analyses}
             onEstimateSource={handleEstimateSource}
+            onGenerateInterestProfile={(items) => generateInterestProfile(items, activeProfile)}
             onSelectAnalysis={handleSelectAnalysis}
             onCreateAnalysis={handleCreateAnalysis}
             queueItems={dehydrateQueue}
@@ -649,7 +684,15 @@ export default function App() {
       case 'analysis':
         return <AnalysisView analysis={selectedAnalysis} onDelete={handleDeleteAnalysis} onGenerateStructure={handleGenerateStructure} />;
       case 'output-studio':
-        return <OutputStudioView analyses={analyses} onSelect={handleSelectAnalysis} />;
+        return (
+          <OutputStudioView
+            activeProfile={activeProfile}
+            analyses={analyses}
+            onGenerateOutput={(items, style, topic) => generateOutputDraft({ analyses: items, style, topic, aiProfile: activeProfile, promptSettings })}
+            onSelect={handleSelectAnalysis}
+            promptSettings={promptSettings}
+          />
+        );
       case 'rss-feed':
         return (
           <RSSFeedView
@@ -764,6 +807,7 @@ export default function App() {
             user={derivedUser}
             recentAnalyses={analyses}
             onEstimateSource={handleEstimateSource}
+            onGenerateInterestProfile={(items) => generateInterestProfile(items, activeProfile)}
             onSelectAnalysis={handleSelectAnalysis}
             onCreateAnalysis={handleCreateAnalysis}
             queueItems={dehydrateQueue}
@@ -813,6 +857,28 @@ export default function App() {
             </motion.div>
           </AnimatePresence>
         </main>
+
+        <footer className="border-t border-outline-variant/10 px-4 py-6 text-center text-xs text-on-surface-variant md:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center justify-center gap-x-5 gap-y-2">
+            <p className="font-headline text-sm font-bold text-primary">挤掉水分，把注意力还给判断。</p>
+              <a
+                className="inline-flex items-center gap-1 font-bold text-primary hover:underline"
+                href="https://github.com/Exekiel179/dehydrated-reader"
+                rel="noreferrer"
+                target="_blank"
+              >
+                <Github className="h-3.5 w-3.5" />
+                GitHub 仓库
+              </a>
+              <a
+                className="inline-flex items-center gap-1 font-bold text-primary hover:underline"
+                href="mailto:exekiel179179@gmail.com"
+              >
+                <Mail className="h-3.5 w-3.5" />
+                exekiel179179@gmail.com
+              </a>
+          </div>
+        </footer>
       </div>
 
       {sidebarOpen ? (

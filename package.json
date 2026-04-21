@@ -17,8 +17,11 @@
     "setup:social-bridge": "powershell -ExecutionPolicy Bypass -File scripts/setup-social-bridge.ps1",
     "setup:auth-assistant": "powershell -ExecutionPolicy Bypass -File scripts/setup-auth-assistant.ps1",
     "setup:yt-dlp": "powershell -ExecutionPolicy Bypass -File scripts/setup-yt-dlp.ps1",
+    "setup:whisper": "powershell -ExecutionPolicy Bypass -File scripts/setup-whisper.ps1",
+    "setup:whisper:model": "powershell -ExecutionPolicy Bypass -Command \"$env:WHISPER_PREWARM='1'; & scripts/setup-whisper.ps1\"",
+    "setup:whisper:small:mirror": "powershell -ExecutionPolicy Bypass -File scripts/download-whisper-small.ps1",
     "setup:models": "tsx scripts/prewarm-models.ts",
-    "setup": "npm run setup:models && npm run setup:crawl4ai && npm run setup:social-bridge && npm run setup:auth-assistant && npm run setup:yt-dlp"
+    "setup": "npm run setup:models && npm run setup:crawl4ai && npm run setup:social-bridge && npm run setup:auth-assistant && npm run setup:yt-dlp && npm run setup:whisper"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

@@ -1,5 +1,15 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, BookOpenText, Flame, LoaderCircle, MessageSquareText, Search, ShieldCheck, Sparkles, WandSparkles } from 'lucide-react';
+import {
+  ArrowRight,
+  BookOpenText,
+  Flame,
+  LoaderCircle,
+  MessageSquareText,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react';
 import type { SocialCrawlOptions, SocialCrawlResponse, SocialCrawlerSettings } from '@/src/types';
 import { crawlSocial } from '@/src/lib/api';
 
@@ -11,33 +21,42 @@ interface SocialCrawlerViewProps {
 
 const PLATFORM_META = {
   xhs: {
-    label: 'Spider_XHS',
-    title: '小红书笔记采集',
-    description: '采集图文笔记、封面、互动指标和创作者线索。',
+    label: '小红书',
+    engineName: 'Spider_XHS',
+    title: '笔记与图文素材',
+    description: '采集笔记正文、图片、封面、作者和互动指标。',
     placeholder: '输入关键词、笔记链接或用户话题',
     icon: WandSparkles,
-    accentClass: 'from-[#f7648b] to-[#ff9f8d]',
-    queryHint: '优先抓图文笔记与封面图。',
+    accentClass: 'from-[#f85b86] to-[#f59687]',
+    softClass: 'bg-[#fff3f5] text-[#9a354d]',
+    borderClass: 'border-[#c96a7a]/35',
+    queryHint: '适合找消费心理、产品话术、图文封面和评论线索。',
     authHint: '需要小红书登录 cookie',
   },
   douyin: {
-    label: 'DouYin_Spider',
-    title: '抖音视频采集',
-    description: '采集作品、封面、作者和热点视频素材。',
+    label: '抖音',
+    engineName: 'DouYin_Spider',
+    title: '短视频与达人素材',
+    description: '采集视频作品、封面、作者、发布时间和热度指标。',
     placeholder: '输入关键词、作品链接或账号方向',
     icon: Flame,
-    accentClass: 'from-[#111111] to-[#6f7cff]',
-    queryHint: '会优先回传视频封面、作者和互动指标。',
+    accentClass: 'from-[#19191f] to-[#7467da]',
+    softClass: 'bg-[#f0efff] text-[#3f397a]',
+    borderClass: 'border-[#7467da]/28',
+    queryHint: '适合找短视频选题、爆款结构、达人线索和素材封面。',
     authHint: '需要网页 cookie，直播能力额外需要 live cookie',
   },
   wechat: {
-    label: 'wechat_spider',
-    title: '公众号文章采集',
-    description: '搜索公众号、读取文章列表，并抓取正文与封面。',
+    label: '公众号',
+    engineName: 'wechat_spider',
+    title: '长文与账号文章',
+    description: '搜索公众号、读取文章列表，并抓取正文、摘要和封面。',
     placeholder: '输入公众号名称或文章链接',
     icon: BookOpenText,
-    accentClass: 'from-[#217346] to-[#64b862]',
-    queryHint: '支持直接抓文章正文，也支持先搜号再取最近文章。',
+    accentClass: 'from-[#267141] to-[#67aa65]',
+    softClass: 'bg-[#eef8ef] text-[#28613b]',
+    borderClass: 'border-[#4b9656]/28',
+    queryHint: '适合抓长文正文、账号近文、封面和可脱水文本。',
     authHint: '可使用扫码缓存，也可直接填写 token/cookie',
   },
 } as const;
@@ -125,6 +144,7 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
   const [crawlOptions, setCrawlOptions] = useState<SocialCrawlOptions>(DEFAULT_SOCIAL_CRAWL_OPTIONS);
 
   const activeMeta = PLATFORM_META[provider];
+  const ActivePlatformIcon = activeMeta.icon;
   const authReady = useMemo(() => hasProviderAuth(provider, settings), [provider, settings]);
   const updateOption = <Key extends keyof SocialCrawlOptions>(key: Key, value: SocialCrawlOptions[Key]) => {
     setCrawlOptions((current) => ({ ...current, [key]: value }));
@@ -132,62 +152,88 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
 
   return (
     <div className="mx-auto max-w-screen-2xl px-4 py-6 md:px-6 md:py-10 lg:px-10">
-      <section className="space-y-3">
-        <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-on-surface-variant/55">社媒抓取</p>
-        <h1 className="font-headline text-[clamp(2.2rem,3.8vw,3.8rem)] font-extrabold tracking-tight text-on-surface">社媒采集器</h1>
-        <p className="max-w-3xl text-sm leading-7 text-on-surface-variant">
-          小红书、抖音、公众号分别独立工作。先选平台，再抓真实内容，确认后直接送去脱水。
-        </p>
+      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-primary/70">Social Capture Desk</p>
+          <h1 className="font-headline text-[clamp(2rem,3.2vw,3.35rem)] font-extrabold tracking-tight text-on-surface">社媒采集工作台</h1>
+          <p className="max-w-3xl text-sm leading-7 text-on-surface-variant">
+            三个爬虫保持独立参数，统一在这里发起采集、预览结果，再把值得保存的内容送去脱水。
+          </p>
+        </div>
+        <button
+          className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary/18 bg-surface-container-lowest px-4 py-3 text-sm font-bold text-primary transition hover:bg-primary/6"
+          onClick={onOpenSettings}
+          type="button"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          认证与路径设置
+        </button>
       </section>
 
-      <section className="mt-8 grid gap-4 xl:grid-cols-3">
-        {(Object.keys(PLATFORM_META) as SocialProvider[]).map((item) => {
-          const meta = PLATFORM_META[item];
-          const Icon = meta.icon;
-          const active = item === provider;
-          const ready = hasProviderAuth(item, settings);
+      <section className="sticky top-16 z-30 mt-7 -mx-4 border-y border-outline-variant/12 bg-background/92 px-4 py-3 backdrop-blur md:-mx-6 md:px-6 lg:-mx-10 lg:px-10">
+        <div className="flex gap-2 overflow-x-auto">
+          {(Object.keys(PLATFORM_META) as SocialProvider[]).map((item) => {
+            const meta = PLATFORM_META[item];
+            const Icon = meta.icon;
+            const active = item === provider;
+            const ready = hasProviderAuth(item, settings);
 
-          return (
-            <button
-              key={item}
-              className={`relative overflow-hidden rounded-lg border p-5 text-left transition ${
-                active
-                  ? 'border-primary bg-surface-container-lowest shadow-[0_12px_30px_rgba(107,60,57,0.08)]'
-                  : 'border-outline-variant/18 bg-surface-container-low hover:border-primary/30'
-              }`}
-              onClick={() => {
-                setProvider(item);
-                setCrawlResult(null);
-                setCrawlError(null);
-              }}
-              type="button"
-            >
-              <div className={`mb-5 flex h-14 items-center justify-between rounded-md bg-gradient-to-r ${meta.accentClass} px-4 text-white`}>
-                <div className="flex items-center gap-3">
-                  <Icon className="h-5 w-5" />
-                  <span className="text-sm font-bold">{meta.label}</span>
-                </div>
-                {ready ? <ShieldCheck className="h-4 w-4" /> : null}
-              </div>
-              <h2 className="text-xl font-bold text-on-surface">{meta.title}</h2>
-              <p className="mt-2 text-sm leading-7 text-on-surface-variant">{meta.description}</p>
-              <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
-                <span className={`rounded-full px-2.5 py-1 font-bold ${ready ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                  {ready ? '认证就绪' : '等待认证'}
+            return (
+              <button
+                key={item}
+                className={`inline-flex shrink-0 items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-bold transition ${
+                  active
+                    ? 'bg-primary text-on-primary shadow-[0_10px_20px_rgba(107,60,57,0.08)]'
+                    : 'bg-surface-container-lowest text-on-surface-variant hover:text-primary'
+                }`}
+                onClick={() => {
+                  setProvider(item);
+                  setCrawlResult(null);
+                  setCrawlError(null);
+                }}
+                type="button"
+              >
+                <Icon className="h-4 w-4" />
+                {meta.label}
+                <span className={`rounded-full px-2 py-0.5 text-[10px] ${active ? 'bg-white/18 text-on-primary' : ready ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                  {ready ? '已认证' : '待认证'}
                 </span>
-                <span className="rounded-full bg-surface px-2.5 py-1 font-bold text-on-surface-variant">{meta.queryHint}</span>
-              </div>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
       </section>
 
-      <section className="mt-8 grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
-        <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6">
+      <section className="mt-6 overflow-hidden rounded-lg border border-outline-variant/16 bg-surface-container-lowest shadow-[0_12px_24px_rgba(107,60,57,0.035)]">
+        <div className={`h-1.5 bg-gradient-to-r ${activeMeta.accentClass}`} />
+        <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="flex items-start gap-4">
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${activeMeta.accentClass} text-white shadow-[0_12px_24px_rgba(35,25,28,0.12)]`}>
+              <ActivePlatformIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/48">{activeMeta.engineName}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <h2 className="font-headline text-2xl font-bold text-on-surface">{activeMeta.label}</h2>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${activeMeta.softClass}`}>{activeMeta.title}</span>
+              </div>
+              <p className="mt-2 text-sm leading-7 text-on-surface-variant">{activeMeta.description}</p>
+            </div>
+          </div>
+          <div className="rounded-lg border border-outline-variant/12 bg-surface px-4 py-3 text-sm leading-6 text-on-surface-variant lg:max-w-md">
+            {activeMeta.queryHint}
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-7 grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <section className="overflow-hidden rounded-lg border border-outline-variant/16 bg-surface-container-low shadow-[0_18px_34px_rgba(107,60,57,0.04)]">
+          <div className={`h-1.5 bg-gradient-to-r ${activeMeta.accentClass}`} />
+          <div className="p-6">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">{activeMeta.label}</p>
-              <h2 className="mt-2 font-headline text-3xl font-bold text-on-surface">{activeMeta.title}</h2>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">{activeMeta.engineName}</p>
+              <h2 className="mt-2 font-headline text-3xl font-bold text-on-surface">{activeMeta.label}采集</h2>
             </div>
             <span className={`rounded-full px-3 py-1 text-xs font-bold ${authReady ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
               {authReady ? '已配置' : '待配置'}
@@ -227,11 +273,13 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
             ) : null}
           </div>
 
-          <div className="mt-4 rounded-lg border border-outline-variant/14 bg-surface-container-lowest p-4">
-            <div className="mb-4">
-              <p className="text-sm font-bold text-on-surface">原始爬虫参数</p>
-              <p className="mt-1 text-xs leading-6 text-on-surface-variant">这里只做统一入口，参数名和含义按原项目入口暴露的能力来。</p>
-            </div>
+          <details className="mt-4 rounded-lg border border-outline-variant/14 bg-surface-container-lowest p-4">
+            <summary className="cursor-pointer text-sm font-bold text-on-surface">
+              原始爬虫参数
+              <span className="ml-2 text-xs font-normal text-on-surface-variant">需要细调排序、时间、范围时再展开</span>
+            </summary>
+            <p className="mt-2 text-xs leading-6 text-on-surface-variant">参数名和含义按原项目入口暴露的能力来，这里只做可视化收口。</p>
+            <div className="mt-4">
 
             {provider === 'xhs' ? (
               <div className="grid gap-3">
@@ -361,7 +409,8 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
                 </label>
               </div>
             ) : null}
-          </div>
+            </div>
+          </details>
 
           <form
             className="mt-6 space-y-4"
@@ -423,14 +472,15 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
 
             {crawlError ? <p className="text-sm text-rose-700">{crawlError}</p> : null}
           </form>
+          </div>
         </section>
 
-        <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6">
+        <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6 shadow-[0_18px_34px_rgba(107,60,57,0.04)]">
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">结果区</p>
               <h2 className="mt-2 font-headline text-3xl font-bold text-on-surface">
-                {crawlResult ? `${activeMeta.title}结果` : '等待抓取'}
+                {crawlResult ? `${activeMeta.label}结果` : '等待抓取'}
               </h2>
             </div>
             {crawlResult ? (
@@ -440,11 +490,11 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
             ) : null}
           </div>
 
-          <div className="space-y-4">
+          <div className={crawlResult?.items?.length ? 'columns-1 gap-4 [column-fill:_balance] 2xl:columns-2' : 'space-y-4'}>
             {crawlResult?.items?.map((item) => (
-              <article key={`${item.provider}-${item.id}`} className="overflow-hidden rounded-lg border border-outline-variant/12 bg-surface-container-lowest">
+              <article key={`${item.provider}-${item.id}`} className="mb-4 break-inside-avoid overflow-hidden rounded-lg border border-outline-variant/12 bg-surface-container-lowest shadow-[0_12px_24px_rgba(107,60,57,0.035)]">
                 {item.coverImageUrl ? (
-                  <div className="h-48 w-full overflow-hidden bg-surface-container">
+                  <div className="max-h-64 min-h-36 w-full overflow-hidden bg-surface-container">
                     <img alt={item.title} className="h-full w-full object-cover" referrerPolicy="no-referrer" src={item.coverImageUrl} />
                   </div>
                 ) : null}
@@ -476,7 +526,7 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
                     </button>
                   </div>
 
-                  <p className="mt-3 text-sm leading-7 text-on-surface-variant">{item.summary}</p>
+                  {item.summary ? <p className="mt-3 line-clamp-4 text-sm leading-7 text-on-surface-variant">{item.summary}</p> : null}
 
                   <div className="mt-4 flex flex-wrap gap-2">
                     {item.tags.slice(0, 6).map((tag) => (
@@ -486,7 +536,7 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
                     ))}
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-on-surface-variant">
+                  <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant">
                     {Object.entries(item.metrics).slice(0, 4).map(([key, value]) => (
                       <span key={key} className="rounded-full bg-surface-container-low px-2.5 py-1">
                         {key}: {String(value)}
@@ -503,13 +553,29 @@ export function SocialCrawlerView({ onDehydrateUrl, onOpenSettings, settings }: 
             ))}
 
             {!crawlResult && !crawlLoading ? (
-              <div className="grid min-h-[420px] place-items-center rounded-lg border border-dashed border-outline-variant/20 bg-surface-container-lowest px-6 py-14 text-center">
-                <div className="max-w-md space-y-3">
-                  <MessageSquareText className="mx-auto h-10 w-10 text-primary/55" />
-                  <p className="text-lg font-bold text-on-surface">还没有抓取结果</p>
-                  <p className="text-sm leading-7 text-on-surface-variant">
-                    选中一个平台，输入关键词或链接后开始抓取。这里会只显示真实返回的数据和封面。
-                  </p>
+              <div className="rounded-lg border border-outline-variant/14 bg-surface-container-lowest p-5">
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(260px,0.8fr)]">
+                  <div className="rounded-lg border border-dashed border-outline-variant/24 bg-surface px-5 py-8">
+                    <MessageSquareText className="h-10 w-10 text-primary/55" />
+                    <p className="mt-4 text-lg font-bold text-on-surface">等待第一批抓取结果</p>
+                    <p className="mt-3 text-sm leading-7 text-on-surface-variant">
+                      输入关键词或链接后，这里会展示真实返回的封面、标题、作者、标签和互动指标。没有结果时先显示采集路线，避免右侧变成空白墙。
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    {[
+                      '1. 读取平台登录态与任务参数',
+                      '2. 调用对应本地爬虫并抽取封面',
+                      '3. 选择条目后送入脱水队列',
+                    ].map((step) => (
+                      <div key={step} className="rounded-lg border border-outline-variant/12 bg-surface px-4 py-3 text-sm font-bold text-on-surface">
+                        {step}
+                      </div>
+                    ))}
+                    <div className="rounded-lg border border-primary/12 bg-primary/6 px-4 py-3 text-xs leading-6 text-on-surface-variant">
+                      当前平台：{activeMeta.label}。建议先用 3-5 条小批量测试，确认封面和链接可用后再扩大抓取数量。
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : null}

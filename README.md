@@ -1,125 +1,168 @@
-# Dehydrated Reader
+# 脱水 Dehydrated Reader
 
-一个可运行的中文“脱水阅读器”原型：输入网址，抓取正文，切分内容，用 Anthropic 兼容接口生成高密度摘要，并可选做搜索核验与本地知识库写入。
+脱水是一个中文知识处理工作台：把长文链接、论文 PDF、课程视频、RSS、热点和社媒素材压成可回看、可搜索、可再创作的高密度知识卡片。
 
-## 当前能力
+> 挤掉水分，把注意力还给判断。
 
-- 中文仪表盘、分析页、RSS、知识库、设置页
-- 多组 AI 配置切换
-- 支持 `Crawl4AI / Firecrawl / Readability` 三种抓取模式
-- 支持配置联通性测试
-- 摘要结果包含基于正文结构生成的 Mermaid 结构图
-- 可选把结果写入本地 `sqlite` 知识库
-- 后端已切换为 `agentic-rag` 编排模式：代理会决定是否检索知识库、是否做搜索核验、是否写回知识库
+## 授权与商业使用
 
-## RAG 现状
+本仓库采用非商用源码共享授权，详见 [LICENSE-NONCOMMERCIAL.md](./LICENSE-NONCOMMERCIAL.md)。
 
-当前已经有可运行的本地 RAG 基线，但还不是最终形态。
+你可以学习、研究、私用、非商用改造；未经作者书面许可，不可以售卖、二次包装成商业软件、SaaS、API 服务、浏览器插件、企业部署或付费交付。
 
-现在已经有的是：
+商业授权请联系：exekiel179179@gmail.com
 
-- SQLite 知识库存储：`data/knowledge-base.sqlite`
-- 抓取、切分、摘要、可选搜索验证
-- 使用本地 embedding 模型生成向量
-- 向量召回与词项召回混合排序
-- 使用本地 reranker 对候选结果二次重排
-- 检索结果会作为上下文参与当前摘要
-- 提供“知识搜索”可视化页面
-- 提供 MCP stdio 工具：`search_knowledge`
+## 项目截图
 
-当前还没有的是：
+商品介绍图位于：
 
-- chunk 级引用对齐
-- 多路查询扩展
+- `marketing/product-intro/index.html`
+- `marketing/product-intro/cards/`
+
+示例：
+
+![一键脱水工作台](marketing/product-intro/cards/01-dashboard.png)
+
+## 核心能力
+
+- 一键脱水：输入 URL、PDF、视频链接，自动抓正文、估含水量、切分、摘要、入库。
+- 多抓取器：支持 `Crawl4AI / Firecrawl / Readability`，并对 MSN、华尔街见闻、公众号、视频链接做专门适配。
+- 视频脱水：优先读取字幕；无字幕时用 `yt-dlp` 下载音频，再用 `faster-whisper small` 转写。
+- 向量 RAG：SQLite 知识库、embedding、reranker、混合召回和可视化知识搜索。
+- 结构表达：按文章真实结构生成 Mermaid 图，而不是通用流程图。
+- 产出页：选择多篇脱水文章，聚合成公众号、小红书或深度文章，并生成配图/视频提示词。
+- RSS 与热点：支持 RSS 导入、AI 关键词发现、TrendRadar 热点读取与来源开关。
+- 社媒采集：统一接入小红书、抖音、公众号爬虫配置与可视化抓取。
+- 设置中心：多 AI 配置切换、抓取器配置、社媒凭据、提示词、生图 API、生视频 API。
+- MCP：暴露本地知识库搜索工具，供其他智能体调用。
+
+## 技术栈
+
+- 前端：React 19 + Vite + Tailwind CSS + Motion
+- 后端：Express + TypeScript
+- 本地知识库：SQLite + better-sqlite3
+- 内容抽取：Readability / Crawl4AI / Firecrawl
+- 视频链路：yt-dlp + faster-whisper
+- 结构图：Mermaid
+- RAG：本地 embedding + reranker
 
 ## 本地启动
 
 前置要求：
 
 - Node.js 20+
-- Python 3.11+（只在使用 Crawl4AI 时需要）
+- Python 3.11+，用于 Crawl4AI、社媒爬虫和视频音频转写
 
-### 1. 安装 Node 依赖
+安装依赖：
 
 ```bash
 npm install
 ```
 
-### 2. 准备环境变量
-
-复制 `.env.example` 为 `.env`，填入你的 AI 接口配置。
-
-### 3. 预热本地模型
+复制环境变量：
 
 ```bash
-npm run setup:models
+copy .env.example .env
 ```
 
-这一步会提前下载：
-
-- embedding 模型
-- reranker 模型
-
-模型缓存位置：
-
-- `.runtime/hf-cache`
-
-### 4. 如需项目内 Crawl4AI 运行时
-
-```powershell
-npm run setup:crawl4ai
-```
-
-这会在仓库内创建：
-
-- `.runtime/crawl4ai/.venv`
-
-向量模型首次运行时会自动下载到：
-
-- `.runtime/hf-cache`
-
-如果首次向量模型加载过慢，服务会在超时后自动退回词项检索，避免整条请求一直阻塞。超时时间可通过 `EMBEDDING_TIMEOUT_MS` 调整。
-
-应用启动时会优先使用仓库内运行时；如果没有，再回退到你自定义的 `CRAWL4AI_PYTHON` 或外部 `CRAWL4AI_ROOT`。
-
-### 5. 启动
+启动前后端：
 
 ```bash
 npm run dev
 ```
 
-如果你只想一键启动前端：
+默认地址：
+
+- 前端：http://localhost:4300
+- 后端：http://localhost:4310
+
+只启动前端：
 
 ```bash
 npm run start:frontend
 ```
 
-Windows 下也可以直接双击：
+Windows 也可以双击：
 
+- `start-app.bat`
 - `start-frontend.bat`
 
-### 6. 启动知识库 MCP
+## 推荐初始化
 
-给其他智能体或 MCP 客户端接入本地知识库时，可以启动：
+预热本地 RAG 模型：
+
+```bash
+npm run setup:models
+```
+
+准备 Crawl4AI：
+
+```powershell
+npm run setup:crawl4ai
+```
+
+准备视频下载与转写：
+
+```powershell
+npm run setup:yt-dlp
+npm run setup:whisper
+```
+
+部署时预下载 Whisper small：
+
+```powershell
+npm run setup:whisper:model
+```
+
+国内镜像下载：
+
+```powershell
+npm run setup:whisper:small:mirror
+```
+
+## MCP 知识搜索
+
+启动本地知识库 MCP：
 
 ```bash
 npm run mcp:knowledge
 ```
 
-这个 MCP 暴露 `search_knowledge` 工具，输入 `query` 和可选 `limit`，返回本地 SQLite + 向量 RAG 的检索结果。
+工具：
 
-## 部署说明
+- `search_knowledge`
 
-为了方便分发到 GitHub，项目现在采用：
+参数：
 
-1. Node 依赖全部放在仓库内 `package.json`
-2. embedding / reranker 模型缓存放在仓库内 `.runtime`
-3. Crawl4AI 运行时优先放在仓库内 `.runtime`
-4. 外部本地环境只作为回退方案，不再是唯一依赖
+- `query`
+- `limit`
 
-如果你不想依赖本地 Python 环境，也可以在部署时只启用：
+## 生成商品介绍图
 
-- `Firecrawl`
-- `Readability`
+项目内置一套 9 张实机商品介绍图生成脚本：
 
-这样部署会更轻。
+```bash
+node scripts/generate-product-intro.mjs
+```
+
+输出：
+
+- `marketing/product-intro/screenshots/`
+- `marketing/product-intro/cards/`
+- `marketing/product-intro/index.html`
+
+## 关于加密与商业化
+
+这个仓库是源码共享版本，适合展示、试用和非商用协作。如果你准备把“脱水”作为可售软件，建议采用双版本策略：
+
+- GitHub 版：非商用源码共享，保留品牌、演示和社区反馈入口。
+- 商业版：闭源分发，使用 Electron/Tauri 打包、代码混淆、授权码或账号登录、服务端校验、功能开关和更新通道。
+
+前端代码本身无法真正“加密到不可逆”，只能混淆和提高逆向成本。更可靠的商业保护方式是把关键模型编排、授权校验、高价值提示词、云端同步和多端能力放到服务端，桌面端只保留客户端能力。
+
+## 作者
+
+Exekiel
+
+- GitHub: https://github.com/Exekiel179/dehydrated-reader
+- Email: exekiel179179@gmail.com

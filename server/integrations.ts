@@ -66,7 +66,7 @@ interface RssDiscoveryCandidate {
   description?: string;
 }
 
-const RSS_DISCOVERY_SEEDS: Record<RSSSubscription['category'], RssDiscoveryCandidate[]> = {
+const RSS_DISCOVERY_SEEDS: Record<string, RssDiscoveryCandidate[]> = {
   psychology: [
     { title: 'Psychology Today', url: 'https://www.psychologytoday.com/us/rss', siteUrl: 'https://www.psychologytoday.com' },
     { title: 'BPS Research Digest', url: 'https://www.bps.org.uk/research-digest/rss.xml', siteUrl: 'https://www.bps.org.uk/research-digest' },
@@ -224,16 +224,12 @@ function parseTrendSourceList(value: unknown, enabled: boolean): TrendMonitorSou
 }
 
 function normalizeRssCategory(category: unknown): RSSSubscription['category'] {
-  switch (category) {
-    case 'psychology':
-    case 'psychology-journal':
-    case 'ai':
-    case 'ai-product':
-    case 'github':
-      return category;
-    default:
-      return 'custom';
-  }
+  const normalized = String(category || 'custom')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'custom';
 }
 
 function stripHtml(value: string | undefined) {
@@ -1221,7 +1217,7 @@ export async function crawlSocialProvider(
   const douyinLiveCookies = settings?.douyinLiveCookies?.trim() || '';
   const wechatToken = settings?.wechatToken?.trim() || '';
   const wechatCookieString = settings?.wechatCookieString?.trim() || '';
-  const wechatCacheFile = settings?.wechatCacheFile?.trim() || '';
+  const wechatCacheFile = settings?.wechatCacheFile?.trim() || path.join(wechatRoot, 'wechat_cache.json');
   const wechatMaxPages = String(Math.max(1, Math.min(10, Number(settings?.wechatMaxPages || 2))));
   const wechatRequestIntervalSeconds = String(Math.max(2, Math.min(120, Number(settings?.wechatRequestIntervalSeconds || 8))));
 

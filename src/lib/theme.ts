@@ -71,11 +71,11 @@ const ACCENT_TOKENS: Record<Exclude<AccentPreset, 'theme'>, Record<string, strin
     '--particle-hue-base': '222',
     '--particle-hue-span': '18',
   },
-  copper: {
-    '--color-primary': '#924628',
-    '--color-primary-container': '#b05e3d',
-    '--particle-hue-base': '18',
-    '--particle-hue-span': '14',
+  graphite: {
+    '--color-primary': '#40524b',
+    '--color-primary-container': '#6f8178',
+    '--particle-hue-base': '150',
+    '--particle-hue-span': '10',
   },
 };
 
@@ -86,7 +86,7 @@ export function resolveStoredColorTheme(storage?: Storage | null): ColorTheme {
 
 export function resolveStoredAccentPreset(storage?: Storage | null): AccentPreset {
   const savedAccent = storage?.getItem(ACCENT_PRESET_STORAGE_KEY);
-  return savedAccent === 'jade' || savedAccent === 'berry' || savedAccent === 'cobalt' || savedAccent === 'copper'
+  return savedAccent === 'jade' || savedAccent === 'berry' || savedAccent === 'cobalt' || savedAccent === 'graphite'
     ? savedAccent
     : 'theme';
 }

@@ -2,7 +2,10 @@ import express from 'express';
 import {
   dehydrateUrl,
   estimateSourceHydration,
+  generateInterestProfileForAnalyses,
+  generateOutputDraftFromAnalyses,
   generateStructureDiagramForAnalysis,
+  importBrowserPage,
   removeAnalysisFromKnowledgeBase,
   searchKnowledgeBase,
   testProfileConnectivity,
@@ -21,7 +24,7 @@ import {
   refreshTrendRadarOverview,
   saveTrendMonitorSettings,
 } from './integrations.ts';
-import type { AiProfile, Analysis, DehydrateRequest, RSSSubscription, SocialCrawlerSettings, SocialCrawlOptions, TrendMonitorSettings } from '../src/types.ts';
+import type { AiProfile, Analysis, DehydrateRequest, OutputStyle, RSSSubscription, SocialCrawlerSettings, SocialCrawlOptions, TrendMonitorSettings } from '../src/types.ts';
 
 const app = express();
 const port = Number(process.env.PORT || 4310);
@@ -65,6 +68,7 @@ app.post('/api/dehydrate', async (req, res) => {
       aiProfile: body.aiProfile || null,
       socialCrawlerSettings: body.socialCrawlerSettings,
       promptSettings: body.promptSettings,
+      existingTags: body.existingTags,
     });
 
     res.json(payload);
@@ -90,6 +94,16 @@ app.post('/api/source-estimate', async (req, res) => {
   }
 });
 
+app.post('/api/import-page', async (req, res) => {
+  try {
+    const payload = await importBrowserPage(req.body || {});
+    res.json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '页面导入失败。';
+    res.status(500).json({ error: message });
+  }
+});
+
 app.post('/api/structure-diagram', async (req, res) => {
   const analysis = req.body?.analysis as Analysis | undefined;
   if (!analysis?.title || !analysis?.content) {
@@ -102,6 +116,45 @@ app.post('/api/structure-diagram', async (req, res) => {
     res.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : '结构图生成失败。';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/interest-profile', async (req, res) => {
+  const analyses = Array.isArray(req.body?.analyses) ? (req.body.analyses as Analysis[]) : [];
+  if (!analyses.length) {
+    res.status(400).json({ error: '还没有可用于生成画像的脱水记录。' });
+    return;
+  }
+
+  try {
+    const payload = await generateInterestProfileForAnalyses(analyses, req.body?.aiProfile || null);
+    res.json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '兴趣画像生成失败。';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/output/generate', async (req, res) => {
+  const analyses = Array.isArray(req.body?.analyses) ? (req.body.analyses as Analysis[]) : [];
+  const style = String(req.body?.style || 'wechat') as OutputStyle;
+  if (!analyses.length) {
+    res.status(400).json({ error: '请先选择至少一篇脱水文章作为素材。' });
+    return;
+  }
+
+  try {
+    const payload = await generateOutputDraftFromAnalyses({
+      analyses,
+      style,
+      topic: String(req.body?.topic || ''),
+      aiProfile: req.body?.aiProfile || null,
+      promptSettings: req.body?.promptSettings,
+    });
+    res.json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '产出生成失败。';
     res.status(500).json({ error: message });
   }
 });

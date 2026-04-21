@@ -1,11 +1,15 @@
 import type {
   Analysis,
   AiProfile,
+  BrowserPageImportResponse,
   ConnectivityReport,
   DehydrateRequest,
   DehydrateResponse,
   DeleteAnalysisResponse,
+  InterestProfileResponse,
   KnowledgeSearchResponse,
+  OutputGenerationResponse,
+  OutputStyle,
   RSSFeedsResponse,
   RSSDiscoveryResponse,
   RSSImportResponse,
@@ -59,6 +63,36 @@ export async function estimateSource(url: string, aiProfile?: AiProfile | null, 
   return response.json() as Promise<SourceEstimateResponse>;
 }
 
+export function buildBrowserImportBookmarklet(apiBase = 'http://localhost:4310') {
+  const script = `(()=>{const pick=(s)=>document.querySelector(s);const c=pick('#js_content')||pick('.rich_media_content')||pick('article')||pick('main')||document.body;const m=(s,a='content')=>pick(s)?.getAttribute(a)||'';fetch('${apiBase.replace(/\/$/, '')}/api/import-page',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:location.href,title:document.querySelector('#activity-name')?.textContent?.trim()||document.title,html:c?.innerHTML||'',text:c?.innerText||'',excerpt:m('meta[name="description"]')||m('meta[property="og:description"]'),coverImageUrl:m('meta[property="og:image"]')||document.querySelector('#js_content img,.rich_media_content img,article img,main img')?.getAttribute('data-src')||document.querySelector('#js_content img,.rich_media_content img,article img,main img')?.getAttribute('src')||'',logoUrl:m('link[rel="icon"]','href')}}).then(r=>r.json().then(j=>{if(!r.ok)throw new Error(j.error||'导入失败');alert('已发送到脱水：'+j.title+'\\n正文字符：'+j.chars)})).catch(e=>alert('发送失败：'+e.message));})();`;
+  return `javascript:${encodeURIComponent(script)}`;
+}
+
+export async function importBrowserPageFromCurrent(payload: {
+  url: string;
+  title?: string;
+  html?: string;
+  text?: string;
+  excerpt?: string;
+  coverImageUrl?: string;
+  logoUrl?: string;
+}) {
+  const response = await fetch(`${API_BASE}/api/import-page`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: '页面导入失败。' })) as { error?: string };
+    throw new Error(error.error || '页面导入失败。');
+  }
+
+  return response.json() as Promise<BrowserPageImportResponse>;
+}
+
 export async function testProfileConnectivity(profile: AiProfile) {
   const response = await fetch(`${API_BASE}/api/test-profile`, {
     method: 'POST',
@@ -91,6 +125,46 @@ export async function generateStructureDiagram(analysis: Analysis, aiProfile?: A
   }
 
   return response.json() as Promise<StructureDiagramResponse>;
+}
+
+export async function generateInterestProfile(analyses: Analysis[], aiProfile?: AiProfile | null) {
+  const response = await fetch(`${API_BASE}/api/interest-profile`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ analyses, aiProfile }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: '兴趣画像生成失败。' })) as { error?: string };
+    throw new Error(error.error || '兴趣画像生成失败。');
+  }
+
+  return response.json() as Promise<InterestProfileResponse>;
+}
+
+export async function generateOutputDraft(payload: {
+  analyses: Analysis[];
+  style: OutputStyle;
+  topic: string;
+  aiProfile?: AiProfile | null;
+  promptSettings?: PromptSettings;
+}) {
+  const response = await fetch(`${API_BASE}/api/output/generate`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: '产出生成失败。' })) as { error?: string };
+    throw new Error(error.error || '产出生成失败。');
+  }
+
+  return response.json() as Promise<OutputGenerationResponse>;
 }
 
 export async function deleteAnalysis(id: string) {

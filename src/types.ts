@@ -1,6 +1,6 @@
 export type ViewType = 'dashboard' | 'analysis' | 'output-studio' | 'knowledge-base' | 'knowledge-search' | 'rss-feed' | 'trend-tracker' | 'social-crawler' | 'settings';
 export type ColorTheme = 'rose' | 'blue';
-export type AccentPreset = 'theme' | 'jade' | 'berry' | 'cobalt' | 'copper';
+export type AccentPreset = 'theme' | 'jade' | 'berry' | 'cobalt' | 'graphite';
 
 export type InterfaceMode = 'anthropic-messages';
 export type FetchProvider = 'crawl4ai' | 'firecrawl' | 'readability';
@@ -136,6 +136,18 @@ export interface SocialCrawlOptions {
 export interface PromptSettings {
   summaryPrompt: string;
   structurePrompt: string;
+  outputWechatPrompt: string;
+  outputXhsPrompt: string;
+  outputArticlePrompt: string;
+  outputWechatHtmlPrompt: string;
+  outputImagePrompt: string;
+  outputVideoPrompt: string;
+  imageApiBaseUrl: string;
+  imageApiKey: string;
+  imageApiModel: string;
+  videoApiBaseUrl: string;
+  videoApiKey: string;
+  videoApiModel: string;
 }
 
 export interface DehydrateOptions {
@@ -150,6 +162,7 @@ export interface DehydrateRequest {
   aiProfile?: AiProfile | null;
   socialCrawlerSettings?: SocialCrawlerSettings;
   promptSettings?: PromptSettings;
+  existingTags?: string[];
 }
 
 export interface SourceEstimateResponse {
@@ -161,6 +174,14 @@ export interface SourceEstimateResponse {
   fetchMethod: 'crawl4ai' | 'firecrawl' | 'readability' | 'yt-dlp' | 'wechat';
   coverImageUrl?: string;
   logoUrl?: string;
+}
+
+export interface BrowserPageImportResponse {
+  ok: boolean;
+  title: string;
+  sourceUrl: string;
+  chars: number;
+  message: string;
 }
 
 export interface DehydrateResponse {
@@ -187,6 +208,33 @@ export interface StructureDiagramResponse {
     mermaid: string;
     caption: string;
   };
+}
+
+export interface InterestProfileResponse {
+  title: string;
+  summary: string;
+  traits: Array<{
+    label: string;
+    evidence: string;
+  }>;
+  focusAreas: string[];
+  readingRhythm: string;
+  nextQuestions: string[];
+  generatedAt: string;
+}
+
+export type OutputStyle = 'wechat' | 'xhs' | 'article';
+
+export interface OutputGenerationResponse {
+  style: OutputStyle;
+  title: string;
+  subtitle: string;
+  markdown: string;
+  html?: string;
+  imagePrompts: string[];
+  videoPrompt: string;
+  sourceIds: string[];
+  generatedAt: string;
 }
 
 export interface TrendTopic {
@@ -241,7 +289,7 @@ export interface RSSSubscription {
   title: string;
   url: string;
   siteUrl?: string;
-  category: 'psychology' | 'psychology-journal' | 'ai' | 'ai-product' | 'github' | 'custom';
+  category: string;
   description?: string;
   coverImageUrl?: string;
   enabled: boolean;

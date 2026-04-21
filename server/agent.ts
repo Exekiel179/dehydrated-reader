@@ -17,7 +17,10 @@ import type {
   DehydrateResponse,
   HydrationReport,
   HydrationSnapshot,
+  InterestProfileResponse,
   KnowledgeSearchResponse,
+  OutputGenerationResponse,
+  OutputStyle,
   PromptSettings,
   SocialCrawlItem,
   SocialCrawlerSettings,
@@ -46,6 +49,13 @@ const YTDLP_VENV = path.join(YTDLP_RUNTIME_ROOT, '.venv');
 const YTDLP_PYTHON = process.platform === 'win32'
   ? path.join(YTDLP_VENV, 'Scripts', 'python.exe')
   : path.join(YTDLP_VENV, 'bin', 'python');
+const WHISPER_RUNTIME_ROOT = path.join(PROJECT_ROOT, '.runtime', 'whisper');
+const WHISPER_VENV = path.join(WHISPER_RUNTIME_ROOT, '.venv');
+const WHISPER_PYTHON = process.platform === 'win32'
+  ? path.join(WHISPER_VENV, 'Scripts', 'python.exe')
+  : path.join(WHISPER_VENV, 'bin', 'python');
+const DEFAULT_WHISPER_MODEL = process.env.WHISPER_MODEL || 'small';
+const LOCAL_WHISPER_SMALL_MODEL = path.join(WHISPER_RUNTIME_ROOT, 'models', 'Systran', 'faster-whisper-small');
 
 type FetchMethod = DehydrateResponse['meta']['fetchMethod'];
 
@@ -56,6 +66,16 @@ interface SourceDocument {
   excerpt: string;
   fetchMethod: FetchMethod;
   sourceType: Analysis['type'];
+  coverImageUrl?: string;
+  logoUrl?: string;
+}
+
+interface ImportedPagePayload {
+  url?: string;
+  title?: string;
+  html?: string;
+  text?: string;
+  excerpt?: string;
   coverImageUrl?: string;
   logoUrl?: string;
 }
@@ -74,6 +94,11 @@ interface FinalDigest {
   diagramMermaid?: string;
   diagramCaption?: string;
   visualSynthesis: Analysis['visualSynthesis'];
+}
+
+interface TagPoolItem {
+  tag: string;
+  count: number;
 }
 
 interface StructureDiagramSpec {
@@ -184,13 +209,91 @@ function inferTypeFromUrl(url: string): Analysis['type'] {
   return 'web';
 }
 
-function isWeChatArticleUrl(url: string) {
+function isDirectWeChatArticleUrl(url: string) {
   try {
     const parsed = new URL(url);
-    return parsed.hostname === 'mp.weixin.qq.com' || parsed.hostname.endsWith('.mp.weixin.qq.com');
+    const host = parsed.hostname.toLowerCase();
+    return host === 'mp.weixin.qq.com' || host.endsWith('.mp.weixin.qq.com');
   } catch {
     return false;
   }
+}
+
+function cleanupNestedUrl(raw: string) {
+  const cleaned = raw
+    .replace(/&amp;/g, '&')
+    .replace(/[)\]}>，。；;'"`]+$/g, '')
+    .trim();
+  const repeatedHttpIndex = cleaned.slice(8).search(/https?:\/\//i);
+  if (repeatedHttpIndex >= 0) {
+    return cleaned.slice(0, repeatedHttpIndex + 8).trim();
+  }
+  return cleaned;
+}
+
+function decodeUrlLoosely(raw: string) {
+  let value = cleanupNestedUrl(raw);
+  for (let index = 0; index < 3; index += 1) {
+    try {
+      const decoded = decodeURIComponent(value);
+      if (decoded === value) {
+        break;
+      }
+      value = decoded;
+    } catch {
+      break;
+    }
+  }
+  return cleanupNestedUrl(value);
+}
+
+function resolveWeChatArticleUrl(rawUrl: string, depth = 0): string | null {
+  if (!rawUrl || depth > 3) {
+    return null;
+  }
+
+  const candidate = decodeUrlLoosely(rawUrl);
+  if (isDirectWeChatArticleUrl(candidate)) {
+    return candidate;
+  }
+
+  const embedded = candidate.match(/https?:\/\/mp\.weixin\.qq\.com\/[^\s"'<>]+/i)?.[0];
+  if (embedded && isDirectWeChatArticleUrl(embedded)) {
+    return cleanupNestedUrl(embedded);
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    const nestedKeys = [
+      'url',
+      'target',
+      'target_url',
+      'redirect',
+      'redirect_url',
+      'jump_url',
+      'link',
+      'content_url',
+      'article_url',
+    ];
+    for (const key of nestedKeys) {
+      const value = parsed.searchParams.get(key);
+      if (!value) {
+        continue;
+      }
+      const nested = resolveWeChatArticleUrl(value, depth + 1);
+      if (nested) {
+        return nested;
+      }
+    }
+  } catch {
+    // Plain text or malformed redirect input; regex extraction above already handled the common case.
+  }
+
+  return null;
+}
+
+function isWeChatArticleUrl(url: string) {
+  return Boolean(resolveWeChatArticleUrl(url));
 }
 
 function isVideoUrl(url: string) {
@@ -401,6 +504,29 @@ function stripMarkdownNoise(markdown: string) {
     .trim();
 }
 
+function pickReadableHtml(document: Document) {
+  const selectors = [
+    '[data-pagefind-body]',
+    'article',
+    'main',
+    '.prose',
+    '.markdown-body',
+    '.docs-content',
+    '.theme-doc-markdown',
+    '[role="main"]',
+  ];
+
+  for (const selector of selectors) {
+    const node = document.querySelector(selector);
+    const textLength = node?.textContent?.replace(/\s+/g, '').length || 0;
+    if (node && textLength >= 120) {
+      return node.innerHTML;
+    }
+  }
+
+  return document.body?.innerHTML || '';
+}
+
 function tokenize(text: string) {
   const normalized = text.toLowerCase();
   const latin = normalized.match(/[a-z0-9]{3,}/g) || [];
@@ -511,6 +637,44 @@ function writeCachedSourceDocument(source: SourceDocument, profile?: AiProfile |
     source,
     expiresAt: Date.now() + SOURCE_CACHE_TTL_MS,
   });
+}
+
+export async function importBrowserPage(payload: ImportedPagePayload) {
+  const url = payload.url?.trim();
+  if (!url || !/^https?:\/\//i.test(url)) {
+    throw new Error('导入失败：缺少有效页面 URL。');
+  }
+
+  const title = payload.title?.trim() || url;
+  const html = payload.html?.trim() || '';
+  const text = payload.text?.trim() || '';
+  const markdown = html
+    ? stripMarkdownNoise(new TurndownService({ headingStyle: 'atx' }).turndown(html))
+    : stripMarkdownNoise(text);
+
+  if (markdown.replace(/\s+/g, '').length < 80) {
+    throw new Error('导入失败：当前页面正文太短，请确认文章已完整加载。');
+  }
+
+  const source: SourceDocument = {
+    url,
+    title,
+    markdown: markdown.startsWith('#') ? markdown : `# ${title}\n\n${markdown}`,
+    excerpt: payload.excerpt?.trim() || markdown.slice(0, 180),
+    fetchMethod: isWeChatArticleUrl(url) ? 'wechat' : 'readability',
+    sourceType: inferTypeFromUrl(url),
+    coverImageUrl: payload.coverImageUrl?.trim() || undefined,
+    logoUrl: payload.logoUrl?.trim() || undefined,
+  };
+
+  writeCachedSourceDocument(source, null, isWeChatArticleUrl(url) ? 'wechat' : '');
+  return {
+    ok: true,
+    title: source.title,
+    sourceUrl: source.url,
+    chars: source.markdown.replace(/\s+/g, '').length,
+    message: '页面正文已导入脱水阅读器，可以回到仪表盘直接脱水。',
+  };
 }
 
 function getSentenceUnits(text: string) {
@@ -866,7 +1030,8 @@ function buildMermaidFromSpec(spec: StructureDiagramSpec, fallback: string) {
 }
 
 function sanitizeSummary(summaryMarkdown: string) {
-  return summaryMarkdown
+  const jsonSummary = extractLooseJsonStringField(summaryMarkdown, 'summaryMarkdown', ['keyClaims', 'visualSynthesis']);
+  return (jsonSummary || summaryMarkdown)
     .replace(/当前未连接大模型[^\n]*/g, '')
     .replace(/返回的是基于抓取正文生成的保底脱水结果[^\n]*/g, '')
     .replace(/建议配置 Anthropic 兼容接口后再生成正式摘要[^\n]*/g, '')
@@ -879,6 +1044,105 @@ function cleanPromptInstruction(value?: string) {
     .replace(/\r/g, '')
     .trim()
     .slice(0, 2400);
+}
+
+function normalizeTagText(tag: string) {
+  return tag
+    .trim()
+    .replace(/[#[\]【】()（）"'“”‘’`]/g, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function tagSimilarity(left: string, right: string) {
+  const a = normalizeTagText(left);
+  const b = normalizeTagText(right);
+  if (!a || !b) {
+    return 0;
+  }
+  if (a === b) {
+    return 1;
+  }
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length > b.length ? a : b;
+  if (shorter.length >= 3 && longer.includes(shorter)) {
+    return shorter.length / longer.length >= 0.62 ? 0.86 : 0.68;
+  }
+  const leftChars = new Set(Array.from(a));
+  const rightChars = new Set(Array.from(b));
+  const intersection = Array.from(leftChars).filter((char) => rightChars.has(char)).length;
+  const union = new Set([...leftChars, ...rightChars]).size || 1;
+  return intersection / union;
+}
+
+function sanitizeTagList(tags: string[]) {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const tag of tags) {
+    const value = String(tag || '').trim().replace(/^#/, '').slice(0, 18);
+    const key = normalizeTagText(value);
+    if (!value || !key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    cleaned.push(value);
+  }
+  return cleaned;
+}
+
+function reuseTags(candidateTags: string[], tagPool: TagPoolItem[], maxTags = 6) {
+  const pool = tagPool
+    .filter((item) => item.tag && normalizeTagText(item.tag))
+    .sort((left, right) => right.count - left.count);
+  const selected: string[] = [];
+
+  for (const rawTag of sanitizeTagList(candidateTags)) {
+    const exact = pool.find((item) => normalizeTagText(item.tag) === normalizeTagText(rawTag));
+    const similar = exact || pool.find((item) => tagSimilarity(rawTag, item.tag) >= 0.78);
+    const next = similar?.tag || rawTag;
+    if (!selected.some((tag) => normalizeTagText(tag) === normalizeTagText(next))) {
+      selected.push(next);
+    }
+    if (selected.length >= maxTags) {
+      return selected;
+    }
+  }
+
+  return selected.length ? selected : ['自动脱水'];
+}
+
+async function collectExistingTagPool(extraTags: string[] = []): Promise<TagPoolItem[]> {
+  const counts = new Map<string, { tag: string; count: number }>();
+  const addTag = (tag: string) => {
+    const value = String(tag || '').trim();
+    const key = normalizeTagText(value);
+    if (!value || !key) {
+      return;
+    }
+    const existing = counts.get(key);
+    if (existing) {
+      existing.count += 1;
+      return;
+    }
+    counts.set(key, { tag: value, count: 1 });
+  };
+
+  for (const tag of extraTags) {
+    addTag(tag);
+  }
+
+  try {
+    const entries = await readKnowledgeBaseEntries();
+    for (const entry of entries) {
+      for (const tag of entry.tags || []) {
+        addTag(tag);
+      }
+    }
+  } catch {
+    // 标签池只是辅助召回；读取失败不阻断脱水。
+  }
+
+  return Array.from(counts.values()).sort((left, right) => right.count - left.count || left.tag.localeCompare(right.tag, 'zh-CN'));
 }
 
 function sanitizeMermaid(raw: string, fallback: string) {
@@ -956,6 +1220,57 @@ function extractJson<T>(raw: string): T {
     throw new Error('模型没有返回可解析的 JSON');
   }
   return JSON.parse(candidate.slice(start, end + 1)) as T;
+}
+
+function extractLooseJsonStringField(raw: string, field: string, nextFields: string[] = []) {
+  const fieldPattern = new RegExp(`"${field}"\\s*:\\s*"`, 'm');
+  const fieldMatch = fieldPattern.exec(raw);
+  if (!fieldMatch) {
+    return '';
+  }
+  const start = fieldMatch.index + fieldMatch[0].length;
+  const nextIndexes = nextFields
+    .map((nextField) => raw.indexOf(`"${nextField}"`, start))
+    .filter((index) => index > start);
+  const fallbackEnd = raw.indexOf('"\n', start);
+  const end = nextIndexes.length
+    ? Math.min(...nextIndexes)
+    : fallbackEnd > start
+      ? fallbackEnd
+      : raw.length;
+  return raw
+    .slice(start, end)
+    .replace(/",\s*$/m, '')
+    .replace(/\\n/g, '\n')
+    .replace(/\\"/g, '"')
+    .trim();
+}
+
+function extractLooseJsonStringArray(raw: string, field: string) {
+  const match = raw.match(new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\]`, 'm'));
+  if (!match?.[1]) {
+    return [] as string[];
+  }
+  return Array.from(match[1].matchAll(/"([^"\n]{1,80})"/g))
+    .map((item) => item[1].trim())
+    .filter(Boolean);
+}
+
+function recoverFinalDigestFromLooseJson(raw: string, source: SourceDocument, chunks: string[], dehydrationLevel: number): FinalDigest {
+  const fallback = buildFallbackDigest(source, chunks, dehydrationLevel);
+  const summaryMarkdown = extractLooseJsonStringField(raw, 'summaryMarkdown', ['keyClaims', 'visualSynthesis']);
+  const title = extractLooseJsonStringField(raw, 'title', ['tags', 'summaryMarkdown']).replace(/^"|"$/g, '');
+  const tags = extractLooseJsonStringArray(raw, 'tags');
+  const keyClaims = extractLooseJsonStringArray(raw, 'keyClaims');
+
+  return {
+    ...fallback,
+    title: title || fallback.title,
+    tags: tags.length ? tags : fallback.tags,
+    summaryMarkdown: sanitizeSummary(summaryMarkdown || raw),
+    keyClaims: keyClaims.length ? keyClaims : fallback.keyClaims,
+    visualSynthesis: [],
+  };
 }
 
 async function callAnthropic(profile: AiProfile | null | undefined, system: string, prompt: string, maxTokens = 1800) {
@@ -1127,6 +1442,7 @@ async function buildFinalDigest(
     knowledgeContext?: string;
     dehydrationLevel?: number;
     promptSettings?: PromptSettings;
+    tagPool?: TagPoolItem[];
   }
 ) {
   const preset = getDehydrationPreset(options?.dehydrationLevel);
@@ -1134,30 +1450,34 @@ async function buildFinalDigest(
   const serializedDigests = JSON.stringify(digests, null, 2);
   const knowledgeContext = options?.knowledgeContext?.trim() || '';
   const customSummaryPrompt = cleanPromptInstruction(options?.promptSettings?.summaryPrompt);
+  const tagPool = options?.tagPool || [];
+  const tagPoolText = tagPool.length
+    ? tagPool.slice(0, 80).map((item) => `${item.tag}${item.count > 1 ? `(${item.count})` : ''}`).join('、')
+    : '无';
 
   const text = await callAnthropic(
     profile,
     '你是中文“脱水阅读器”的核心摘要代理。只保留信息，不写套话，不写过程说明，不写自我解释。输出必须紧凑、可入库、可复用。',
-    `请根据来源信息和分块提要，输出严格 JSON：{"title":"中文标题","tags":["3-6个中文标签"],"summaryMarkdown":"Markdown 格式摘要，必须只包含 # 核心摘要 / # 结构拆解 / # 行动项 三个部分","keyClaims":["${preset.keyClaims} 条核心判断"],"visualSynthesis":[]}\n\n脱水强度：${preset.normalized}/100（${preset.title}）\n\n长度要求：\n1. 全文目标长度控制在 ${preset.targetChars} 个中文字符左右。\n2. # 核心摘要 保留 ${preset.coreBullets} 条最高信息密度要点。\n3. # 结构拆解 保留 ${preset.structureBullets} 条结构节点，只写层级、转折、因果、论证推进。\n4. # 行动项 最多 ${preset.actionBullets} 条，没有就写“- 无”。\n5. 脱水强度越高，越要删掉解释性修辞、背景铺垫、重复表述。\n\n通用要求：\n1. 标签要能支撑检索，优先提取主题、对象、方法、场景四类信息。\n2. 摘要里禁止出现“本文”“这篇文章主要讲”“当前”“建议配置”“处理说明”“已执行”等废话。\n3. 不要复述题目，不要写开场白，不要写总结句套话。\n4. 如果提供了知识库上下文，只把它作为背景对照，用来补充概念关系或避免重复，不要把旧条目硬塞进摘要。\n5. 输出必须能直接入库和二次检索。\n\n用户自定义脱水提示词：\n${customSummaryPrompt || '无'}\n\n来源信息：\n- 标题：${source.title}\n- URL：${source.url}\n- 类型：${source.sourceType}\n- 摘要引子：${source.excerpt}\n\n知识库上下文：\n${knowledgeContext || '无'}\n\n分块提要：\n${serializedDigests}`,
+    `请根据来源信息和分块提要，输出严格 JSON：{"title":"中文标题","tags":["3-6个中文标签"],"summaryMarkdown":"Markdown 格式摘要，必须只包含 # 核心摘要 / # 结构拆解 / # 行动项 三个部分","keyClaims":["${preset.keyClaims} 条核心判断"],"visualSynthesis":[]}\n\n脱水强度：${preset.normalized}/100（${preset.title}）\n\n长度要求：\n1. 全文目标长度控制在 ${preset.targetChars} 个中文字符左右。\n2. # 核心摘要 保留 ${preset.coreBullets} 条最高信息密度要点。\n3. # 结构拆解 保留 ${preset.structureBullets} 条结构节点，只写层级、转折、因果、论证推进。\n4. # 行动项 最多 ${preset.actionBullets} 条，没有就写“- 无”。\n5. 脱水强度越高，越要删掉解释性修辞、背景铺垫、重复表述。\n\n标签要求：\n1. 标签用于长期检索，不要每篇都发明新词。\n2. 优先复用“已有标签池”中语义相近的标签；例如已有“效率策略”时，不要另造“效率提升方法”。\n3. 只有当已有标签无法准确覆盖新主题、对象、方法或场景时，才新增标签。\n4. 标签应短、稳定、可复用；避免事件细节过长，避免把完整标题拆成标签。\n5. 新增标签最多 2 个，其余尽量从已有标签池选择。\n\n通用要求：\n1. 标签要能支撑检索，优先提取主题、对象、方法、场景四类信息。\n2. 摘要里禁止出现“本文”“这篇文章主要讲”“当前”“建议配置”“处理说明”“已执行”等废话。\n3. 不要复述题目，不要写开场白，不要写总结句套话。\n4. 如果提供了知识库上下文，只把它作为背景对照，用来补充概念关系或避免重复，不要把旧条目硬塞进摘要。\n5. 输出必须能直接入库和二次检索。\n\n已有标签池（括号为出现次数，优先复用高频标签）：\n${tagPoolText}\n\n用户自定义脱水提示词：\n${customSummaryPrompt || '无'}\n\n来源信息：\n- 标题：${source.title}\n- URL：${source.url}\n- 类型：${source.sourceType}\n- 摘要引子：${source.excerpt}\n\n知识库上下文：\n${knowledgeContext || '无'}\n\n分块提要：\n${serializedDigests}`,
     1800
   );
 
   if (!text) {
-    return buildFallbackDigest(source, chunks, preset.normalized);
+    const fallback = buildFallbackDigest(source, chunks, preset.normalized);
+    return { ...fallback, tags: reuseTags(fallback.tags, tagPool) };
   }
 
   try {
     const parsed = extractJson<FinalDigest>(text);
     return {
       ...parsed,
+      tags: reuseTags(parsed.tags || [], tagPool),
       summaryMarkdown: sanitizeSummary(parsed.summaryMarkdown),
       visualSynthesis: [],
     };
   } catch {
-    return {
-      ...buildFallbackDigest(source, chunks, preset.normalized),
-      summaryMarkdown: sanitizeSummary(text),
-    };
+    const recovered = recoverFinalDigestFromLooseJson(text, source, chunks, preset.normalized);
+    return { ...recovered, tags: reuseTags(recovered.tags, tagPool) };
   }
 }
 
@@ -1712,6 +2032,152 @@ function serializeKnowledgeHits(hits: KnowledgeHit[]) {
     .join('\n');
 }
 
+function extractMsnArticleId(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (!/(^|\.)msn\.com$/i.test(parsed.hostname)) {
+      return '';
+    }
+    const match = parsed.pathname.match(/\/ar-([A-Za-z0-9]+)/i) || parsed.pathname.match(/(AA[A-Za-z0-9]+)/i);
+    return match?.[1] || '';
+  } catch {
+    return '';
+  }
+}
+
+function extractWallstreetCnArticleId(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (!/(^|\.)wallstreetcn\.com$/i.test(parsed.hostname)) {
+      return '';
+    }
+    return parsed.pathname.match(/\/articles\/(\d+)/)?.[1] || '';
+  } catch {
+    return '';
+  }
+}
+
+async function fetchWithMsnContentApi(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
+  const articleId = extractMsnArticleId(url);
+  if (!articleId) {
+    throw new Error('不是可识别的 MSN 文章链接。');
+  }
+  const apiUrl = `https://assets.msn.com/content/view/v2/Detail/en-us/${encodeURIComponent(articleId)}`;
+  const response = await fetchWithProxy(apiUrl, {
+    headers: {
+      accept: 'application/json',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36',
+    },
+  }, settings, 'readability');
+
+  if (!response.ok) {
+    throw new Error(`MSN 内容接口读取失败：${response.status}`);
+  }
+
+  const payload = await response.json() as {
+    title?: string;
+    abstract?: string;
+    body?: string;
+    sourceHref?: string;
+    provider?: { name?: string; logo?: { url?: string }; url?: string };
+    imageResources?: Array<{ url?: string }>;
+  };
+  const turndownService = new TurndownService({ headingStyle: 'atx' });
+  const bodyMarkdown = stripMarkdownNoise(turndownService.turndown(payload.body || ''));
+  const markdown = stripMarkdownNoise([
+    `# ${payload.title || 'MSN 文章'}`,
+    payload.provider?.name ? `来源：${payload.provider.name}` : '',
+    payload.abstract || '',
+    bodyMarkdown,
+  ].filter(Boolean).join('\n\n'));
+
+  if (markdown.replace(/\s+/g, '').length < 80) {
+    throw new Error('MSN 内容接口没有返回足够正文。');
+  }
+
+  return {
+    url: payload.sourceHref || url,
+    title: payload.title || 'MSN 文章',
+    markdown,
+    excerpt: payload.abstract || markdown.slice(0, 180),
+    fetchMethod: 'readability',
+    sourceType: 'article',
+    coverImageUrl: payload.imageResources?.find((image) => image.url)?.url,
+    logoUrl: payload.provider?.logo?.url,
+  };
+}
+
+async function fetchWithWallstreetCnApi(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
+  const articleId = extractWallstreetCnArticleId(url);
+  if (!articleId) {
+    throw new Error('不是可识别的华尔街见闻文章链接。');
+  }
+
+  const apiUrl = `https://api.wallstreetcn.com/apiv1/content/articles/${encodeURIComponent(articleId)}?extract=1`;
+  const response = await fetchWithProxy(apiUrl, {
+    headers: {
+      accept: 'application/json',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0 Safari/537.36',
+      referer: url,
+    },
+  }, settings, 'readability');
+
+  if (!response.ok) {
+    throw new Error(`华尔街见闻内容接口读取失败：${response.status}`);
+  }
+
+  const payload = await response.json() as {
+    code?: number;
+    message?: string;
+    data?: {
+      title?: string;
+      content?: string;
+      summary?: string;
+      uri?: string;
+      display_time?: number;
+      author?: { display_name?: string; avatar?: string };
+      image_uris?: string[];
+      cover?: string;
+      categories?: Array<{ name?: string }>;
+      asset_tags?: Array<{ name?: string }>;
+    };
+  };
+
+  if (payload.code !== 20000 || !payload.data) {
+    throw new Error(`华尔街见闻内容接口返回异常：${payload.message || payload.code || '未知错误'}`);
+  }
+
+  const article = payload.data;
+  const turndownService = new TurndownService({ headingStyle: 'atx' });
+  const bodyMarkdown = stripMarkdownNoise(turndownService.turndown(article.content || ''));
+  const tagLine = [...(article.categories || []), ...(article.asset_tags || [])]
+    .map((item) => item.name)
+    .filter(Boolean)
+    .join('、');
+  const markdown = stripMarkdownNoise([
+    `# ${article.title || '华尔街见闻文章'}`,
+    article.author?.display_name ? `作者：${article.author.display_name}` : '',
+    tagLine ? `标签：${tagLine}` : '',
+    article.summary || '',
+    bodyMarkdown,
+  ].filter(Boolean).join('\n\n'));
+
+  if (markdown.replace(/\s+/g, '').length < 80) {
+    throw new Error('华尔街见闻内容接口没有返回足够正文。');
+  }
+
+  return {
+    url: article.uri || url,
+    title: article.title || '华尔街见闻文章',
+    markdown,
+    excerpt: article.summary || markdown.slice(0, 180),
+    fetchMethod: 'readability',
+    sourceType: 'article',
+    coverImageUrl: article.cover || article.image_uris?.[0],
+    logoUrl: article.author?.avatar,
+  };
+}
+
 async function fetchWithReadability(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
   const response = await fetchWithProxy(url, {
     headers: {
@@ -1731,9 +2197,14 @@ async function fetchWithReadability(url: string, settings?: SocialCrawlerSetting
   const artwork = extractDocumentArtwork(dom.window.document, url);
 
   const title = article?.title || dom.window.document.title || url;
-  const contentHtml = article?.content || dom.window.document.body.innerHTML;
-  const markdown = stripMarkdownNoise(turndownService.turndown(contentHtml));
+  const readabilityMarkdown = stripMarkdownNoise(turndownService.turndown(article?.content || ''));
+  const fallbackMarkdown = stripMarkdownNoise(turndownService.turndown(pickReadableHtml(dom.window.document)));
+  const markdown = readabilityMarkdown.replace(/\s+/g, '').length >= 120 ? readabilityMarkdown : fallbackMarkdown;
   const excerpt = article?.excerpt || markdown.slice(0, 180);
+
+  if (markdown.replace(/\s+/g, '').length < 80) {
+    throw new Error('页面没有提取到足够正文，无法预估。');
+  }
 
   return {
     url,
@@ -2105,6 +2576,81 @@ async function downloadVideoAudio(url: string, videoDir: string) {
     .find((file) => /\.(m4a|mp3|webm|opus|wav|mp4)$/i.test(file));
 }
 
+async function ensureWhisperPython() {
+  if (process.env.WHISPER_PYTHON?.trim()) {
+    return process.env.WHISPER_PYTHON.trim();
+  }
+
+  try {
+    await fs.access(WHISPER_PYTHON);
+    return WHISPER_PYTHON;
+  } catch {
+    await fs.mkdir(WHISPER_RUNTIME_ROOT, { recursive: true });
+    const bootstrapPython = process.env.PYTHON_BOOTSTRAP || 'python';
+    await runProcess(bootstrapPython, ['-m', 'venv', WHISPER_VENV], { timeoutMs: 120000 });
+    await runProcess(WHISPER_PYTHON, ['-m', 'pip', 'install', '--upgrade', 'pip'], { timeoutMs: 120000 });
+    await runProcess(WHISPER_PYTHON, ['-m', 'pip', 'install', 'faster-whisper'], { timeoutMs: 300000 });
+    return WHISPER_PYTHON;
+  }
+}
+
+async function transcribeVideoAudio(audioPath: string) {
+  const python = await ensureWhisperPython();
+  const cacheDir = path.join(WHISPER_RUNTIME_ROOT, 'models');
+  await fs.mkdir(cacheDir, { recursive: true });
+  const localSmallReady = await Promise.all([
+    fs.access(path.join(LOCAL_WHISPER_SMALL_MODEL, 'config.json')).then(() => true).catch(() => false),
+    fs.access(path.join(LOCAL_WHISPER_SMALL_MODEL, 'model.bin')).then(() => true).catch(() => false),
+    fs.access(path.join(LOCAL_WHISPER_SMALL_MODEL, 'tokenizer.json')).then(() => true).catch(() => false),
+    fs.access(path.join(LOCAL_WHISPER_SMALL_MODEL, 'vocabulary.txt')).then(() => true).catch(() => false),
+  ]).then((checks) => checks.every(Boolean));
+  const model = process.env.WHISPER_MODEL_PATH?.trim() || (
+    DEFAULT_WHISPER_MODEL === 'small' && localSmallReady ? LOCAL_WHISPER_SMALL_MODEL : DEFAULT_WHISPER_MODEL
+  );
+  const stdout = await runProcess(
+    python,
+    [
+      path.join(PROJECT_ROOT, 'server', 'whisper_transcribe.py'),
+      '--audio',
+      audioPath,
+      '--model',
+      model,
+      '--cache-dir',
+      cacheDir,
+    ],
+    { cwd: PROJECT_ROOT, timeoutMs: 30 * 60 * 1000 }
+  );
+  const jsonLine = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reverse()
+    .find((line) => line.startsWith('{') && line.endsWith('}'));
+
+  if (!jsonLine) {
+    throw new Error('Whisper 转写没有返回可解析结果。');
+  }
+
+  const payload = JSON.parse(jsonLine) as {
+    ok?: boolean;
+    error?: string;
+    model?: string;
+    language?: string;
+    duration?: number;
+    text?: string;
+  };
+  if (!payload.ok || !payload.text?.trim()) {
+    throw new Error(payload.error || 'Whisper 没有转写出可用文本。');
+  }
+
+  return {
+    text: payload.text.trim(),
+    model: payload.model || DEFAULT_WHISPER_MODEL,
+    language: payload.language || '',
+    duration: payload.duration || 0,
+  };
+}
+
 async function fetchWithYtDlp(url: string): Promise<SourceDocument> {
   await fs.mkdir(VIDEO_DOWNLOAD_DIR, { recursive: true });
   const metadataRaw = await runYtDlpWithLoginFallback(['--dump-json', '--no-playlist', url], 120000);
@@ -2144,18 +2690,21 @@ async function fetchWithYtDlp(url: string): Promise<SourceDocument> {
   ).catch(() => '');
 
   const subtitlePath = await findDownloadedSubtitle(videoDir);
-  if (!subtitlePath) {
+  let transcript = '';
+  let transcriptSource = '字幕转写';
+  if (subtitlePath) {
+    transcript = stripVttToText(await fs.readFile(subtitlePath, 'utf8'));
+  } else {
     const audioPath = await downloadVideoAudio(url, videoDir).catch(() => '');
-    throw new Error(
-      audioPath
-        ? `视频没有可用字幕，已下载音频到 ${audioPath}。下一步需要接入 Whisper/faster-whisper 转写后再脱水。`
-        : '视频没有可用字幕，且音频下载失败。请检查 yt-dlp、登录状态或视频权限。'
-    );
+    if (!audioPath) {
+      throw new Error('视频没有可用字幕，且音频下载失败。请检查 yt-dlp、登录状态或视频权限。');
+    }
+    const transcription = await transcribeVideoAudio(audioPath);
+    transcript = transcription.text;
+    transcriptSource = `音频转写（faster-whisper ${transcription.model}${transcription.language ? ` / ${transcription.language}` : ''}）`;
   }
-
-  const transcript = stripVttToText(await fs.readFile(subtitlePath, 'utf8'));
   if (transcript.replace(/\s+/g, '').length < 80) {
-    throw new Error('视频字幕内容过短，无法可靠脱水。');
+    throw new Error('视频转写内容过短，无法可靠脱水。');
   }
 
   const duration = metadata.duration_string || (metadata.duration ? `${Math.round(metadata.duration / 60)} 分钟` : '未知时长');
@@ -2165,7 +2714,7 @@ async function fetchWithYtDlp(url: string): Promise<SourceDocument> {
       metadata.uploader ? `UP 主 / 作者：${metadata.uploader}` : '',
       `视频时长：${duration}`,
       metadata.description ? `简介：${metadata.description.slice(0, 800)}` : '',
-      '## 字幕转写',
+      `## ${transcriptSource}`,
       transcript,
     ]
       .filter(Boolean)
@@ -2189,8 +2738,8 @@ async function fetchWithCrawl4AI(url: string, settings?: SocialCrawlerSettings):
     process.env.CRAWL4AI_PYTHON,
     path.join(PROJECT_CRAWL4AI_ROOT, '.venv', 'Scripts', 'python.exe'),
     path.join(PROJECT_CRAWL4AI_ROOT, '.venv311', 'Scripts', 'python.exe'),
-    path.join(process.env.CRAWL4AI_ROOT || DEFAULT_CRAWL4AI_ROOT, '.venv', 'Scripts', 'python.exe'),
     path.join(process.env.CRAWL4AI_ROOT || DEFAULT_CRAWL4AI_ROOT, '.venv311', 'Scripts', 'python.exe'),
+    path.join(process.env.CRAWL4AI_ROOT || DEFAULT_CRAWL4AI_ROOT, '.venv', 'Scripts', 'python.exe'),
   ].filter(Boolean) as string[];
 
   let pythonPath: string | null = null;
@@ -2204,6 +2753,7 @@ async function fetchWithCrawl4AI(url: string, settings?: SocialCrawlerSettings):
   for (const candidate of pythonCandidates) {
     try {
       await fs.access(candidate);
+      await runProcess(candidate, ['-c', 'import crawl4ai'], { timeoutMs: 12000 });
       pythonPath = candidate;
       break;
     } catch {
@@ -2291,6 +2841,14 @@ async function fetchWithCrawl4AI(url: string, settings?: SocialCrawlerSettings):
     coverImageUrl: resolveAssetUrl(url, payload.coverImageUrl),
     logoUrl: resolveAssetUrl(url, payload.logoUrl),
   };
+}
+
+async function fetchWithCrawl4AIWithTimeout(url: string, settings?: SocialCrawlerSettings) {
+  return withTimeout(
+    fetchWithCrawl4AI(url, settings),
+    Number(process.env.CRAWL4AI_FETCH_TIMEOUT_MS || 45000),
+    'Crawl4AI 抓取'
+  ).catch(() => null);
 }
 
 async function fetchWithFirecrawl(url: string, profile?: AiProfile | null, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
@@ -2397,7 +2955,7 @@ async function fetchSubpageDocument(url: string, profile?: AiProfile | null, set
     if (provider === 'readability') {
       return await fetchWithReadability(url, settings);
     }
-    return (await fetchWithCrawl4AI(url, settings)) || (await fetchWithReadability(url, settings));
+    return (await fetchWithCrawl4AIWithTimeout(url, settings)) || (await fetchWithReadability(url, settings));
   } catch {
     return null;
   }
@@ -2448,8 +3006,12 @@ async function expandSourceWithSubpages(source: SourceDocument, profile?: AiProf
 }
 
 async function fetchSourceDocument(url: string, profile?: AiProfile | null, socialCrawlerSettings?: SocialCrawlerSettings) {
-  const methodHint = isWeChatArticleUrl(url) ? 'wechat' : isVideoUrl(url) ? 'yt-dlp' : '';
-  const cached = readCachedSourceDocument(url, profile, methodHint);
+  const wechatArticleUrl = resolveWeChatArticleUrl(url);
+  const effectiveUrl = wechatArticleUrl || url;
+  const msnArticleId = extractMsnArticleId(effectiveUrl);
+  const wallstreetCnArticleId = extractWallstreetCnArticleId(effectiveUrl);
+  const methodHint = wechatArticleUrl ? 'wechat' : isVideoUrl(effectiveUrl) ? 'yt-dlp' : msnArticleId || wallstreetCnArticleId ? 'readability' : '';
+  const cached = readCachedSourceDocument(effectiveUrl, profile, methodHint);
   if (cached) {
     return cached;
   }
@@ -2457,38 +3019,57 @@ async function fetchSourceDocument(url: string, profile?: AiProfile | null, soci
   const provider = profile?.fetchProvider || 'crawl4ai';
   let source: SourceDocument;
 
-  if (isWeChatArticleUrl(url)) {
-    source = await fetchWithWeChatSpider(url, socialCrawlerSettings);
+  if (wechatArticleUrl) {
+    try {
+      source = await fetchWithWeChatSpider(wechatArticleUrl, socialCrawlerSettings);
+    } catch (error) {
+      if (socialCrawlerSettings?.wechatManualVerify === false) {
+        throw error;
+      }
+      source = await fetchWithWeChat(wechatArticleUrl, socialCrawlerSettings);
+    }
     writeCachedSourceDocument(source, profile, 'wechat');
     return source;
   }
 
-  if (isVideoUrl(url)) {
-    source = await fetchWithYtDlp(url);
+  if (isVideoUrl(effectiveUrl)) {
+    source = await fetchWithYtDlp(effectiveUrl);
     writeCachedSourceDocument(source, profile, 'yt-dlp');
     return source;
   }
 
+  if (msnArticleId) {
+    source = await fetchWithMsnContentApi(effectiveUrl, socialCrawlerSettings);
+    writeCachedSourceDocument(source, profile, 'readability');
+    return source;
+  }
+
+  if (wallstreetCnArticleId) {
+    source = await fetchWithWallstreetCnApi(effectiveUrl, socialCrawlerSettings);
+    writeCachedSourceDocument(source, profile, 'readability');
+    return source;
+  }
+
   if (provider === 'firecrawl') {
-    source = await expandSourceWithSubpages(await fetchWithFirecrawl(url, profile, socialCrawlerSettings), profile, socialCrawlerSettings);
+    source = await expandSourceWithSubpages(await fetchWithFirecrawl(effectiveUrl, profile, socialCrawlerSettings), profile, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile);
     return source;
   }
 
   if (provider === 'readability') {
-    source = await expandSourceWithSubpages(await fetchWithReadability(url, socialCrawlerSettings), profile, socialCrawlerSettings);
+    source = await expandSourceWithSubpages(await fetchWithReadability(effectiveUrl, socialCrawlerSettings), profile, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile);
     return source;
   }
 
-  const crawl4aiResult = await fetchWithCrawl4AI(url, socialCrawlerSettings);
+  const crawl4aiResult = await fetchWithCrawl4AIWithTimeout(effectiveUrl, socialCrawlerSettings);
   if (crawl4aiResult?.markdown) {
     source = await expandSourceWithSubpages(crawl4aiResult, profile, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile);
     return source;
   }
 
-  source = await expandSourceWithSubpages(await fetchWithReadability(url, socialCrawlerSettings), profile, socialCrawlerSettings);
+  source = await expandSourceWithSubpages(await fetchWithReadability(effectiveUrl, socialCrawlerSettings), profile, socialCrawlerSettings);
   writeCachedSourceDocument(source, profile);
   return source;
 }
@@ -2511,7 +3092,7 @@ function buildAnalysis(
     source: source.title,
     sourceUrl: source.url,
     readTime: estimateReadTime(source.markdown, source.sourceType),
-    tags: digest.tags?.length ? digest.tags.slice(0, 4) : ['自动脱水'],
+    tags: digest.tags?.length ? sanitizeTagList(digest.tags).slice(0, 6) : ['自动脱水'],
     content: summaryMarkdown,
     visualSynthesis: [],
     structureDiagram: digest.diagramMermaid
@@ -2554,6 +3135,7 @@ export async function dehydrateUrl(input: DehydrateRequest): Promise<DehydrateRe
   const source = await fetchSourceDocument(input.url, input.aiProfile, input.socialCrawlerSettings);
   const chunks = splitIntoChunks(source.markdown);
   const dehydrationLevel = normalizeDehydrationLevel(input.options?.dehydrationLevel);
+  const tagPool = await collectExistingTagPool(input.existingTags || []);
   const plan = await buildAgentPlan(input.aiProfile, input, source);
   const trace: AgentTraceItem[] = plan.steps.map((step) => ({
     tool: step.tool,
@@ -2585,6 +3167,7 @@ export async function dehydrateUrl(input: DehydrateRequest): Promise<DehydrateRe
           knowledgeContext: serializeKnowledgeHits(knowledgeHits),
           dehydrationLevel,
           promptSettings: input.promptSettings,
+          tagPool,
         });
         if (traceItem) {
           traceItem.status = 'completed';
@@ -2625,6 +3208,7 @@ export async function dehydrateUrl(input: DehydrateRequest): Promise<DehydrateRe
     knowledgeContext: serializeKnowledgeHits(knowledgeHits),
     dehydrationLevel,
     promptSettings: input.promptSettings,
+    tagPool,
   });
   const hydration = buildHydrationReport(
     source.markdown,
@@ -2683,6 +3267,239 @@ export async function removeAnalysisFromKnowledgeBase(id: string) {
     deletedId: id,
     knowledgeBaseDeleted: result.changes > 0,
   };
+}
+
+function buildLocalInterestProfile(analyses: Analysis[]): InterestProfileResponse {
+  const tags = analyses.flatMap((analysis) => analysis.tags || []);
+  const tagCounts = new Map<string, number>();
+  for (const tag of tags) {
+    const normalized = tag.trim();
+    if (normalized) {
+      tagCounts.set(normalized, (tagCounts.get(normalized) || 0) + 1);
+    }
+  }
+  const focusAreas = Array.from(tagCounts.entries())
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 6)
+    .map(([tag]) => tag);
+  const typeCounts = new Map<string, number>();
+  for (const analysis of analyses) {
+    typeCounts.set(analysis.type, (typeCounts.get(analysis.type) || 0) + 1);
+  }
+  const dominantType = Array.from(typeCounts.entries()).sort((left, right) => right[1] - left[1])[0]?.[0] || 'article';
+
+  return {
+    title: focusAreas.length ? `${focusAreas.slice(0, 2).join(' / ')} 型阅读者` : '结构化探索型阅读者',
+    summary: analyses.length
+      ? '偏好把复杂材料压成可比较、可回看的判断单元，关注概念之间的连接和可迁移的方法。'
+      : '还没有足够的脱水记录。先生成几篇简报后，画像会更稳定。',
+    traits: [
+      {
+        label: '结构优先',
+        evidence: '多次保留结构拆解、标签和关键判断，说明你更在意信息如何组织。',
+      },
+      {
+        label: dominantType === 'video' ? '长内容耐受' : '密度敏感',
+        evidence: dominantType === 'video' ? '视频来源占比较高，适合先转写再压缩。' : '更常处理文章和文档，适合高密度摘要与标签检索。',
+      },
+      {
+        label: '复用导向',
+        evidence: '写入知识库与标签沉淀让材料能被二次搜索，而不是一次性消费。',
+      },
+    ],
+    focusAreas: focusAreas.length ? focusAreas : ['认知加工', 'AI 工具', '知识管理'],
+    readingRhythm: analyses.length >= 8 ? '稳定积累，适合每周做一次主题回看。' : '样本还少，建议先积累 6-10 篇再校准兴趣画像。',
+    nextQuestions: [
+      '这些材料共同指向的长期问题是什么？',
+      '哪些标签已经足够形成专题？',
+      '哪些来源只是热闹，但不能转化为判断？',
+    ],
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function normalizeInterestProfile(input: Partial<InterestProfileResponse>, analyses: Analysis[]): InterestProfileResponse {
+  const fallback = buildLocalInterestProfile(analyses);
+  return {
+    title: String(input.title || fallback.title).slice(0, 36),
+    summary: String(input.summary || fallback.summary).slice(0, 180),
+    traits: Array.isArray(input.traits) && input.traits.length
+      ? input.traits.slice(0, 4).map((trait) => ({
+        label: String(trait?.label || '兴趣特征').slice(0, 12),
+        evidence: String(trait?.evidence || '').slice(0, 90),
+      }))
+      : fallback.traits,
+    focusAreas: Array.isArray(input.focusAreas) && input.focusAreas.length
+      ? input.focusAreas.map(String).filter(Boolean).slice(0, 8)
+      : fallback.focusAreas,
+    readingRhythm: String(input.readingRhythm || fallback.readingRhythm).slice(0, 120),
+    nextQuestions: Array.isArray(input.nextQuestions) && input.nextQuestions.length
+      ? input.nextQuestions.map(String).filter(Boolean).slice(0, 4)
+      : fallback.nextQuestions,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+export async function generateInterestProfileForAnalyses(analyses: Analysis[], profile?: AiProfile | null): Promise<InterestProfileResponse> {
+  const usableAnalyses = analyses.slice(0, 24);
+  if (!profile?.apiKey) {
+    throw new Error('请先在设置页配置 AI Key，再生成兴趣画像。');
+  }
+
+  const source = usableAnalyses.map((analysis, index) => ({
+    index: index + 1,
+    title: analysis.title,
+    type: analysis.type,
+    tags: analysis.tags,
+    keyInsights: analysis.metrics?.keyInsights || 0,
+    hydration: analysis.hydration
+      ? {
+        before: analysis.hydration.before.waterPercent,
+        after: analysis.hydration.after.waterPercent,
+        drop: analysis.hydration.waterDropPercent,
+      }
+      : null,
+    excerpt: analysis.content.replace(/[#>*`-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220),
+  }));
+
+  const text = await callAnthropic(
+    profile,
+    '你是脱水阅读器的兴趣画像代理。只根据用户已生成的脱水记录推断阅读兴趣，不要编造个人隐私。只返回 JSON。',
+    `请基于这些脱水记录生成用户的阅读兴趣画像。输出严格 JSON：{"title":"不超过16字的画像名","summary":"2句以内，说明兴趣与认知工作方式","traits":[{"label":"特征名","evidence":"证据，不超过40字"}],"focusAreas":["4-8个关注领域"],"readingRhythm":"一句话说明阅读/脱水节律","nextQuestions":["3个下一步可追问的问题"]}\n\n要求：\n1. 不要写“根据你的记录”这种开场废话。\n2. 不要推断年龄、性别、职业、收入、健康等个人隐私。\n3. 画像要服务于知识管理和选题判断。\n4. 只输出 JSON，不要 Markdown。\n\n脱水记录：\n${JSON.stringify(source, null, 2)}`,
+    1200
+  );
+
+  try {
+    return normalizeInterestProfile(extractJson<InterestProfileResponse>(text), usableAnalyses);
+  } catch {
+    return normalizeInterestProfile(buildLocalInterestProfile(usableAnalyses), usableAnalyses);
+  }
+}
+
+function outputStyleLabel(style: OutputStyle) {
+  if (style === 'xhs') {
+    return '小红书笔记';
+  }
+  if (style === 'article') {
+    return '深度文章';
+  }
+  return '公众号长文';
+}
+
+function getOutputStylePrompt(style: OutputStyle, settings?: PromptSettings) {
+  if (style === 'xhs') {
+    return settings?.outputXhsPrompt || '';
+  }
+  if (style === 'article') {
+    return settings?.outputArticlePrompt || '';
+  }
+  return settings?.outputWechatPrompt || '';
+}
+
+function normalizeOutputDraft(value: Partial<OutputGenerationResponse>, style: OutputStyle, analyses: Analysis[]): OutputGenerationResponse {
+  const title = String(value.title || `${outputStyleLabel(style)}草稿`).trim();
+  const markdown = String(value.markdown || '').trim() || `# ${title}\n\n${analyses.map((analysis) => `- ${analysis.title}`).join('\n')}`;
+  return {
+    style,
+    title,
+    subtitle: String(value.subtitle || '由脱水素材聚合生成').trim(),
+    markdown,
+    html: typeof value.html === 'string' ? value.html.trim() : undefined,
+    imagePrompts: Array.isArray(value.imagePrompts)
+      ? value.imagePrompts.map((item) => String(item).trim()).filter(Boolean).slice(0, 4)
+      : [],
+    videoPrompt: String(value.videoPrompt || '').trim(),
+    sourceIds: analyses.map((analysis) => analysis.id),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function buildLocalOutputDraft(style: OutputStyle, topic: string, analyses: Analysis[], settings?: PromptSettings): OutputGenerationResponse {
+  const title = topic.trim() || analyses[0]?.title || `${outputStyleLabel(style)}草稿`;
+  const bullets = analyses.slice(0, 6).map((analysis) => {
+    const excerpt = analysis.content.replace(/[#>*`-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+    return `- ${analysis.title}：${excerpt}`;
+  });
+  const markdown = [
+    `# ${title}`,
+    '',
+    '## 核心判断',
+    bullets.join('\n'),
+    '',
+    '## 可展开方向',
+    '- 找出这些素材共享的问题。',
+    '- 区分事实、观点和可行动建议。',
+    '- 把冲突最大的判断放到开头。',
+  ].join('\n');
+
+  return normalizeOutputDraft({
+    title,
+    subtitle: '本地兜底草稿，建议配置 AI 后重新生成。',
+    markdown,
+    html: style === 'wechat' ? `<section style="font-size:16px;line-height:1.8;color:#1b1c1b;">${markdown.replace(/\n/g, '<br/>')}</section>` : undefined,
+    imagePrompts: [`${settings?.outputImagePrompt || '文章封面'}：${title}`],
+    videoPrompt: `${settings?.outputVideoPrompt || '短视频脚本'}：${title}`,
+  }, style, analyses);
+}
+
+export async function generateOutputDraftFromAnalyses(input: {
+  analyses: Analysis[];
+  style: OutputStyle;
+  topic?: string;
+  aiProfile?: AiProfile | null;
+  promptSettings?: PromptSettings;
+}): Promise<OutputGenerationResponse> {
+  const analyses = input.analyses.slice(0, 12);
+  const style: OutputStyle = ['wechat', 'xhs', 'article'].includes(input.style) ? input.style : 'wechat';
+  if (!analyses.length) {
+    throw new Error('请先选择至少一篇脱水文章作为素材。');
+  }
+
+  if (!input.aiProfile?.apiKey) {
+    return buildLocalOutputDraft(style, input.topic || '', analyses, input.promptSettings);
+  }
+
+  const sources = analyses.map((analysis, index) => ({
+    index: index + 1,
+    id: analysis.id,
+    title: analysis.title,
+    source: analysis.source,
+    sourceUrl: analysis.sourceUrl,
+    tags: analysis.tags,
+    type: analysis.type,
+    hydration: analysis.hydration
+      ? {
+        before: analysis.hydration.before.waterPercent,
+        after: analysis.hydration.after.waterPercent,
+      }
+      : null,
+    content: analysis.content.slice(0, 2800),
+  }));
+  const stylePrompt = cleanPromptInstruction(getOutputStylePrompt(style, input.promptSettings));
+  const htmlPrompt = cleanPromptInstruction(input.promptSettings?.outputWechatHtmlPrompt);
+  const imagePrompt = cleanPromptInstruction(input.promptSettings?.outputImagePrompt);
+  const videoPrompt = cleanPromptInstruction(input.promptSettings?.outputVideoPrompt);
+  const mediaInstruction = [
+    input.promptSettings?.imageApiBaseUrl
+      ? `已配置生图 API（${input.promptSettings.imageApiModel || '未指定模型'}），仍先输出可审校的 imagePrompts。`
+      : '未配置生图 API：必须输出可直接复制给生图模型的 imagePrompts。',
+    input.promptSettings?.videoApiBaseUrl
+      ? `已配置生视频 API（${input.promptSettings.videoApiModel || '未指定模型'}），仍先输出可审校的视频提示词。`
+      : '未配置生视频 API：必须输出可直接复制给生视频模型的视频提示词。',
+  ].join('\n');
+
+  const text = await callAnthropic(
+    input.aiProfile,
+    '你是脱水阅读器的多素材产出代理。你的任务不是继续摘要，而是基于已脱水素材进行再创作、聚合论证和平台化表达。只输出严格 JSON。',
+    `请把多篇脱水素材聚合成一份新的${outputStyleLabel(style)}。输出严格 JSON：{"title":"标题","subtitle":"一句副标题","markdown":"完整 Markdown 成稿","html":"公众号风格时输出可粘贴到微信编辑器的 HTML，其他风格可为空","imagePrompts":["1-4条生图提示词"],"videoPrompt":"一条生视频或短视频脚本提示词"}\n\n主题/方向：${input.topic?.trim() || '由素材自动提炼'}\n目标风格：${outputStyleLabel(style)}\n\n平台写作内置提示词（来自本地 skills 方法论，用户可在设置页修改）：\n${stylePrompt || '无'}\n\n公众号 HTML 排版提示词：\n${style === 'wechat' ? htmlPrompt || '生成内联样式 HTML，不渲染 H1 标题。' : '非公众号风格，html 可为空。'}\n\n生图提示词要求：\n${imagePrompt || '输出中文封面/配图提示词，文字少，隐喻清楚。'}\n\n生视频提示词要求：\n${videoPrompt || '输出短视频镜头脚本提示词，5-7 个镜头。'}\n\n媒体接口状态：\n${mediaInstruction}\n\n硬性要求：\n1. 不要把多篇脱水结果逐条拼贴，要提出一个新的主线。\n2. 保留素材中的事实边界，不伪造来源、数据、人物经历。\n3. 如素材之间存在张力，要写出张力，不要强行圆成一致观点。\n4. 公众号风格必须给 html 字段；HTML 使用内联 style，不要外链 CSS/JS。\n5. 小红书风格要包含标题、正文、标签，语气自然但不夸张。\n6. imagePrompts 和 videoPrompt 即使未配置媒体 API 也必须生成。\n7. 只输出 JSON，不要 Markdown 代码块。\n\n素材：\n${JSON.stringify(sources, null, 2)}`,
+    2400
+  );
+
+  try {
+    return normalizeOutputDraft(extractJson<OutputGenerationResponse>(text), style, analyses);
+  } catch {
+    return buildLocalOutputDraft(style, input.topic || '', analyses, input.promptSettings);
+  }
 }
 
 export async function testProfileConnectivity(profile: AiProfile) {

@@ -13,7 +13,11 @@ interface RSSFeedViewProps {
   activeProfile?: AiProfile | null;
 }
 
-const CATEGORY_LABELS: Record<RSSSubscription['category'] | 'all', string> = {
+type RSSCategoryFilter = string | 'all';
+
+const RSS_CATEGORY_LABELS_STORAGE_KEY = 'dehydrated-reader-rss-category-labels';
+
+const DEFAULT_CATEGORY_LABELS: Record<string, string> = {
   all: '全部',
   psychology: '心理学',
   'psychology-journal': '心理学顶刊',
@@ -22,6 +26,59 @@ const CATEGORY_LABELS: Record<RSSSubscription['category'] | 'all', string> = {
   github: 'GitHub 趋势',
   custom: '自定义',
 };
+
+const DEFAULT_CATEGORY_ORDER = ['all', 'psychology', 'psychology-journal', 'ai', 'ai-product', 'github', 'custom'];
+
+function normalizeCategoryId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function createCategoryId(label: string) {
+  const ascii = normalizeCategoryId(label);
+  if (ascii) {
+    return ascii.startsWith('custom-') ? ascii : `custom-${ascii}`;
+  }
+  return `custom-${Date.now().toString(36)}`;
+}
+
+function normalizeCategoryLabels(input: unknown): Record<string, string> {
+  if (!input || typeof input !== 'object') {
+    return DEFAULT_CATEGORY_LABELS;
+  }
+  const next = { ...DEFAULT_CATEGORY_LABELS };
+  for (const [category, value] of Object.entries(input as Record<string, unknown>)) {
+    if (typeof value === 'string' && value.trim()) {
+      const normalizedCategory = normalizeCategoryId(category);
+      if (normalizedCategory) {
+        next[normalizedCategory] = value.trim().slice(0, 16);
+      }
+    }
+  }
+  return next;
+}
+
+function isLikelyUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return true;
+  }
+  return /^[\w.-]+\.[a-z]{2,}(?:[/:?#].*)?$/i.test(trimmed);
+}
+
+function toImportableUrl(value: string) {
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
 
 function faviconUrl(siteUrl?: string) {
   if (!siteUrl) {
@@ -72,20 +129,39 @@ export function RSSFeedView({
   const [error, setError] = useState<string | null>(null);
   const [feedHint, setFeedHint] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeCategory, setActiveCategory] = useState<RSSSubscription['category'] | 'all'>('all');
+  const [activeCategory, setActiveCategory] = useState<RSSCategoryFilter>('all');
   const [importUrl, setImportUrl] = useState('');
   const [importCategory, setImportCategory] = useState<RSSSubscription['category']>('custom');
   const [importing, setImporting] = useState(false);
-  const [aiQuery, setAiQuery] = useState('');
-  const [aiCategory, setAiCategory] = useState<RSSSubscription['category']>('custom');
-  const [aiSearching, setAiSearching] = useState(false);
   const [aiResults, setAiResults] = useState<RSSSubscription[]>([]);
+  const [categoryLabels, setCategoryLabels] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_CATEGORY_LABELS;
+    }
+    try {
+      return normalizeCategoryLabels(JSON.parse(window.localStorage.getItem(RSS_CATEGORY_LABELS_STORAGE_KEY) || 'null'));
+    } catch {
+      return DEFAULT_CATEGORY_LABELS;
+    }
+  });
+  const [editingCategories, setEditingCategories] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [dehydratingUrls, setDehydratingUrls] = useState<string[]>([]);
   const subscriptionBase = resolvedSubscriptions.length ? resolvedSubscriptions : subscriptions;
+  const currentInputIsUrl = isLikelyUrl(importUrl);
+  const categoryOrder = useMemo(() => {
+    const fromSubscriptions = subscriptionBase.map((subscription) => subscription.category).filter(Boolean);
+    return Array.from(new Set([...DEFAULT_CATEGORY_ORDER, ...Object.keys(categoryLabels), ...fromSubscriptions]));
+  }, [categoryLabels, subscriptionBase]);
+  const importCategoryOptions = useMemo(() => categoryOrder.filter((category) => category !== 'all'), [categoryOrder]);
 
   useEffect(() => {
     setResolvedSubscriptions(subscriptions);
   }, [subscriptions]);
+
+  useEffect(() => {
+    window.localStorage.setItem(RSS_CATEGORY_LABELS_STORAGE_KEY, JSON.stringify(categoryLabels));
+  }, [categoryLabels]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,13 +216,70 @@ export function RSSFeedView({
     onSaveSubscriptions(Array.from(merged.values()));
   };
 
+  const labelForCategory = (category: string) => categoryLabels[category] || category;
+
+  const handleAddCategory = () => {
+    const label = newCategoryName.trim().slice(0, 16);
+    if (!label) {
+      return;
+    }
+    const baseId = createCategoryId(label);
+    let id = baseId;
+    let index = 2;
+    while (categoryLabels[id]) {
+      id = `${baseId}-${index}`;
+      index += 1;
+    }
+    setCategoryLabels((current) => ({ ...current, [id]: label }));
+    setImportCategory(id);
+    setActiveCategory(id);
+    setNewCategoryName('');
+    setFeedHint(`已新增分组：${label}。`);
+  };
+
+  const handleSmartImport = async () => {
+    const value = importUrl.trim();
+    if (!value) {
+      return;
+    }
+
+    try {
+      setImporting(true);
+      setError(null);
+      setFeedHint(null);
+      setAiResults([]);
+
+      if (isLikelyUrl(value)) {
+        const response = await importRssSubscription(toImportableUrl(value), importCategory);
+        const merged = new Map(subscriptionBase.map((subscription) => [subscription.id, subscription]));
+        merged.set(response.subscription.id, response.subscription);
+        onSaveSubscriptions(Array.from(merged.values()));
+        setFeedHint(`已导入 ${response.subscription.title}。`);
+        setImportUrl('');
+        return;
+      }
+
+      const response = await discoverRssSubscriptions({
+        query: value,
+        category: importCategory,
+        aiProfile: activeProfile,
+      });
+      setAiResults(response.subscriptions);
+      setFeedHint(response.message || `AI 已根据“${value}”找到 ${response.subscriptions.length} 个候选源。`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : currentInputIsUrl ? 'RSS 导入失败。' : 'AI 搜索 RSS 失败。');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-screen-2xl px-8 py-8">
       <div className="mb-8 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-on-surface">RSS 订阅</h1>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-on-surface-variant">
-            现在这里可以直接导入 RSS 或 Atom 订阅，默认已经放进一批心理学、人工智能、AI 产品和 GitHub 趋势源。每条更新都能直接送进脱水队列。
+            粘贴 RSS/Atom 链接会直接导入；输入关键词会调用当前 AI 配置搜索可读订阅源。每条更新都能直接送进脱水队列。
           </p>
         </div>
 
@@ -178,13 +311,33 @@ export function RSSFeedView({
       </div>
 
       <section className="rounded-xl border border-outline-variant/14 bg-surface-container-lowest p-6">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">智能导入</p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-on-surface">链接导入 / AI 搜索</h2>
+          </div>
+          <p className="max-w-xl text-sm leading-6 text-on-surface-variant">
+            当前输入会自动判断：链接走订阅校验，非链接走 AI 发现并返回候选源。
+          </p>
+        </div>
+
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_180px_auto]">
           <label className="relative block">
-            <Rss className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant/45" />
+            {currentInputIsUrl ? (
+              <Rss className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant/45" />
+            ) : (
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant/45" />
+            )}
             <input
               className="w-full rounded-lg border border-outline-variant/16 bg-surface-container-low px-10 py-3 text-sm outline-none transition focus:border-primary/20 focus:ring-2 focus:ring-primary/10"
               onChange={(event) => setImportUrl(event.target.value)}
-              placeholder="粘贴 RSS / Atom 地址，例如 https://example.com/feed.xml"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void handleSmartImport();
+                }
+              }}
+              placeholder="粘贴 RSS / Atom 地址，或输入关键词让 AI 搜索"
               value={importUrl}
             />
           </label>
@@ -194,104 +347,26 @@ export function RSSFeedView({
             onChange={(event) => setImportCategory(event.target.value as RSSSubscription['category'])}
             value={importCategory}
           >
-            <option value="custom">自定义</option>
-            <option value="psychology">心理学</option>
-            <option value="psychology-journal">心理学顶刊</option>
-            <option value="ai">人工智能</option>
-            <option value="ai-product">AI 产品</option>
-            <option value="github">GitHub 趋势</option>
+            {importCategoryOptions.map((category) => (
+              <option key={category} value={category}>
+                {labelForCategory(category)}
+              </option>
+            ))}
           </select>
 
           <button
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-5 py-3 text-sm font-bold text-on-primary"
             disabled={importing || !importUrl.trim()}
-            onClick={async () => {
-              try {
-                setImporting(true);
-                setError(null);
-                const response = await importRssSubscription(importUrl, importCategory);
-                const merged = new Map(subscriptionBase.map((subscription) => [subscription.id, subscription]));
-                merged.set(response.subscription.id, response.subscription);
-                onSaveSubscriptions(Array.from(merged.values()));
-                setFeedHint(`已导入 ${response.subscription.title}。`);
-                setImportUrl('');
-              } catch (nextError) {
-                setError(nextError instanceof Error ? nextError.message : 'RSS 导入失败。');
-              } finally {
-                setImporting(false);
-              }
-            }}
+            onClick={() => void handleSmartImport()}
             type="button"
           >
-            {importing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            导入订阅
+            {importing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : currentInputIsUrl ? <Plus className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+            {currentInputIsUrl ? '导入订阅' : 'AI 搜索'}
           </button>
         </div>
 
         {feedHint ? <p className="mt-4 text-sm leading-7 text-on-surface-variant">{feedHint}</p> : null}
         {error ? <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">{error}</div> : null}
-      </section>
-
-      <section className="mt-6 rounded-xl border border-outline-variant/14 bg-surface-container-lowest p-6">
-        <div className="mb-5 flex flex-col gap-2">
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">AI 发现</p>
-          <h2 className="text-2xl font-bold tracking-tight text-on-surface">按关键词搜索 RSS 订阅</h2>
-          <p className="max-w-3xl text-sm leading-7 text-on-surface-variant">
-            输入主题后，AI 会给出候选信息源，后端会实际校验 RSS/Atom 是否可读，只把可用结果放在这里。
-          </p>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_180px_auto]">
-          <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant/45" />
-            <input
-              className="w-full rounded-lg border border-outline-variant/16 bg-surface-container-low px-10 py-3 text-sm outline-none transition focus:border-primary/20 focus:ring-2 focus:ring-primary/10"
-              onChange={(event) => setAiQuery(event.target.value)}
-              placeholder="例如：认知心理学、AI Agent、产品增长、机器学习论文"
-              value={aiQuery}
-            />
-          </label>
-
-          <select
-            className="rounded-lg border border-outline-variant/16 bg-surface-container-low px-4 py-3 text-sm outline-none transition focus:border-primary/20 focus:ring-2 focus:ring-primary/10"
-            onChange={(event) => setAiCategory(event.target.value as RSSSubscription['category'])}
-            value={aiCategory}
-          >
-            <option value="custom">自定义</option>
-            <option value="psychology">心理学</option>
-            <option value="psychology-journal">心理学顶刊</option>
-            <option value="ai">人工智能</option>
-            <option value="ai-product">AI 产品</option>
-            <option value="github">GitHub 趋势</option>
-          </select>
-
-          <button
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-5 py-3 text-sm font-bold text-on-primary"
-            disabled={aiSearching || !aiQuery.trim()}
-            onClick={async () => {
-              try {
-                setAiSearching(true);
-                setError(null);
-                setFeedHint(null);
-                const response = await discoverRssSubscriptions({
-                  query: aiQuery,
-                  category: aiCategory,
-                  aiProfile: activeProfile,
-                });
-                setAiResults(response.subscriptions);
-                setFeedHint(response.message);
-              } catch (nextError) {
-                setError(nextError instanceof Error ? nextError.message : 'RSS 搜索失败。');
-              } finally {
-                setAiSearching(false);
-              }
-            }}
-            type="button"
-          >
-            {aiSearching ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            AI 搜索
-          </button>
-        </div>
 
         {aiResults.length ? (
           <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -339,7 +414,7 @@ export function RSSFeedView({
 
       <section className="mt-8">
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          {(Object.keys(CATEGORY_LABELS) as Array<keyof typeof CATEGORY_LABELS>).map((category) => (
+          {categoryOrder.map((category) => (
             <button
               key={category}
               className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
@@ -350,9 +425,17 @@ export function RSSFeedView({
               onClick={() => setActiveCategory(category)}
               type="button"
             >
-              {CATEGORY_LABELS[category]}
+              {labelForCategory(category)}
             </button>
           ))}
+
+          <button
+            className="rounded-lg border border-outline-variant/16 bg-surface-container-lowest px-3 py-2 text-sm font-bold text-on-surface-variant transition hover:border-primary/20 hover:text-primary"
+            onClick={() => setEditingCategories((editing) => !editing)}
+            type="button"
+          >
+            {editingCategories ? '收起分组名' : '编辑分组名'}
+          </button>
 
           <label className="relative ml-auto block min-w-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant/45" />
@@ -364,6 +447,80 @@ export function RSSFeedView({
             />
           </label>
         </div>
+
+        {editingCategories ? (
+          <div className="mb-5 rounded-xl border border-outline-variant/14 bg-surface-container-lowest p-4">
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
+              <label className="relative block min-w-0 flex-1">
+                <Plus className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant/45" />
+                <input
+                  className="w-full rounded-lg border border-outline-variant/16 bg-surface-container-low px-10 py-2.5 text-sm font-bold text-on-surface outline-none transition focus:border-primary/20 focus:ring-2 focus:ring-primary/10"
+                  onChange={(event) => setNewCategoryName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      handleAddCategory();
+                    }
+                  }}
+                  placeholder="新增分组，例如：认知科学、设计、商业"
+                  value={newCategoryName}
+                />
+              </label>
+              <button
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-on-primary disabled:opacity-50"
+                disabled={!newCategoryName.trim()}
+                onClick={handleAddCategory}
+                type="button"
+              >
+                <Plus className="h-4 w-4" />
+                新增分组
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {categoryOrder.map((category) => (
+                <label
+                  key={category}
+                  className="inline-flex items-center gap-2 rounded-full border border-outline-variant/14 bg-surface-container-low px-3 py-2"
+                >
+                  <input
+                    aria-label={`编辑${labelForCategory(category)}分组名`}
+                    className="w-[8.5rem] border-none bg-transparent p-0 text-sm font-bold text-on-surface outline-none focus:ring-0"
+                    onChange={(event) =>
+                      setCategoryLabels((current) => ({
+                        ...current,
+                        [category]: event.target.value.slice(0, 16),
+                      }))
+                    }
+                    value={labelForCategory(category)}
+                  />
+                  {category.startsWith('custom-') ? (
+                    <button
+                      className="text-xs font-bold text-on-surface-variant hover:text-rose-600"
+                      onClick={() => {
+                        setCategoryLabels((current) => {
+                          const next = { ...current };
+                          delete next[category];
+                          return next;
+                        });
+                        mergeSubscriptions(subscriptionBase.map((item) => (item.category === category ? { ...item, category: 'custom' } : item)));
+                        if (activeCategory === category) {
+                          setActiveCategory('all');
+                        }
+                        if (importCategory === category) {
+                          setImportCategory('custom');
+                        }
+                      }}
+                      type="button"
+                    >
+                      删除
+                    </button>
+                  ) : null}
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visibleSubscriptions.map((subscription) => (
@@ -386,7 +543,7 @@ export function RSSFeedView({
                   </div>
                 )}
                 <div className="absolute left-4 top-4 rounded-full bg-surface-container-lowest/90 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
-                  {CATEGORY_LABELS[subscription.category]}
+                  {labelForCategory(subscription.category)}
                 </div>
               </div>
 
@@ -474,7 +631,7 @@ export function RSSFeedView({
                   <p className="mt-2 line-clamp-3 text-sm leading-6 text-on-surface-variant">{excerpt}</p>
 
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-primary/8 px-2.5 py-1 text-[10px] font-bold text-primary">{CATEGORY_LABELS[item.subscriptionCategory]}</span>
+                    <span className="rounded-full bg-primary/8 px-2.5 py-1 text-[10px] font-bold text-primary">{labelForCategory(item.subscriptionCategory)}</span>
                     <button
                       className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-bold text-on-primary disabled:cursor-wait disabled:opacity-70"
                       disabled={dehydratingUrls.includes(item.url)}

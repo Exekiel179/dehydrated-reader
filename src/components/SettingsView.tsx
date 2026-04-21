@@ -13,7 +13,7 @@ import type {
   TrendMonitorSource,
   User,
 } from '@/src/types';
-import { captureSocialAuth, captureWechatAuth, fetchRandomAvatar, fetchTrendMonitorSettings, openSocialLogin, saveTrendMonitorSettings } from '@/src/lib/api';
+import { buildBrowserImportBookmarklet, captureSocialAuth, captureWechatAuth, fetchRandomAvatar, fetchTrendMonitorSettings, openSocialLogin, saveTrendMonitorSettings } from '@/src/lib/api';
 
 interface SettingsViewProps {
   profiles: AiProfile[];
@@ -68,14 +68,24 @@ const PAGE_STYLES: Array<{
     swatches: ['#00685f', '#008378', '#f7fbfa'],
   },
   {
-    id: 'editorial-copper',
-    label: '铜版编辑',
-    note: '更接近出版和策展语气，强调质感。',
+    id: 'graphite-lab',
+    label: '石墨实验室',
+    note: '更克制的研究台气质，适合长时间配置和审校。',
     theme: 'rose',
-    accent: 'copper',
-    swatches: ['#924628', '#b05e3d', '#fffaf7'],
+    accent: 'graphite',
+    swatches: ['#40524b', '#6f8178', '#f7faf8'],
   },
 ];
+
+const SETTINGS_PANELS = [
+  { id: 'basic', label: '基础与接口' },
+  { id: 'style', label: '页面风格' },
+  { id: 'prompts', label: '脱水提示词' },
+  { id: 'trends', label: '热点来源' },
+  { id: 'social', label: '社媒凭据' },
+] as const;
+
+type SettingsPanelId = (typeof SETTINGS_PANELS)[number]['id'];
 
 function maskKey(apiKey: string) {
   if (!apiKey) {
@@ -174,6 +184,7 @@ export function SettingsView({
   const [connectivity, setConnectivity] = useState<ConnectivityReport | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [avatarHint, setAvatarHint] = useState<string | null>(null);
+  const bookmarklet = useMemo(() => buildBrowserImportBookmarklet(), []);
   const [userDraft, setUserDraft] = useState<User>(userProfile);
   const [socialDraft, setSocialDraft] = useState<SocialCrawlerSettings>(socialCrawlerSettings);
   const [promptDraft, setPromptDraft] = useState<PromptSettings>(promptSettings);
@@ -185,6 +196,7 @@ export function SettingsView({
   const [trendSaving, setTrendSaving] = useState(false);
   const [trendError, setTrendError] = useState<string | null>(null);
   const [trendHint, setTrendHint] = useState<string | null>(null);
+  const [activePanel, setActivePanel] = useState<SettingsPanelId>('basic');
 
   useEffect(() => {
     setDraft(selectedProfile);
@@ -275,6 +287,26 @@ export function SettingsView({
         </p>
       </section>
 
+      <nav className="sticky top-16 z-30 -mx-4 border-y border-outline-variant/12 bg-background/92 px-4 py-3 backdrop-blur md:-mx-6 md:px-6 lg:-mx-10 lg:px-10">
+        <div className="flex gap-2 overflow-x-auto">
+          {SETTINGS_PANELS.map((panel) => (
+            <button
+              key={panel.id}
+              className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-bold transition ${
+                activePanel === panel.id
+                  ? 'bg-primary text-on-primary shadow-[0_10px_20px_rgba(107,60,57,0.08)]'
+                  : 'bg-surface-container-lowest text-on-surface-variant hover:text-primary'
+              }`}
+              onClick={() => setActivePanel(panel.id)}
+              type="button"
+            >
+              {panel.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {activePanel === 'basic' ? (
       <section className="grid gap-8 xl:grid-cols-[300px_minmax(0,1fr)]">
         <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6">
           <div className="mb-6 flex flex-col items-center text-center">
@@ -406,7 +438,9 @@ export function SettingsView({
           </div>
         </section>
       </section>
+      ) : null}
 
+      {activePanel === 'style' ? (
       <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6">
         <div className="mb-6 flex items-center gap-3">
           <Palette className="h-5 w-5 text-primary" />
@@ -444,14 +478,16 @@ export function SettingsView({
           })}
         </div>
       </section>
+      ) : null}
 
+      {activePanel === 'prompts' ? (
       <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6">
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">提示词</p>
             <h3 className="mt-1 font-headline text-3xl font-bold text-on-surface">脱水提示词</h3>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-on-surface-variant">
-              这里的内容会作为附加约束注入脱水摘要和结构图生成。输出 JSON 格式、字段结构和 Mermaid 安全规则仍由系统保底。
+              这里维护脱水、结构图、产出页再创作、公众号 HTML 排版，以及生图/生视频接口。产出页内置了本地内容 skill 的方法论，但你可以直接改成自己的风格。
             </p>
           </div>
           <button
@@ -486,6 +522,86 @@ export function SettingsView({
           </label>
         </div>
 
+        <div className="mt-8 grid gap-6 lg:grid-cols-3">
+          <label className="space-y-3">
+            <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">公众号聚合提示词</span>
+            <textarea
+              className="min-h-48 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm leading-7 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              onChange={(event) => setPromptDraft((current) => ({ ...current, outputWechatPrompt: event.target.value }))}
+              value={promptDraft.outputWechatPrompt}
+            />
+          </label>
+
+          <label className="space-y-3">
+            <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">小红书聚合提示词</span>
+            <textarea
+              className="min-h-48 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm leading-7 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              onChange={(event) => setPromptDraft((current) => ({ ...current, outputXhsPrompt: event.target.value }))}
+              value={promptDraft.outputXhsPrompt}
+            />
+          </label>
+
+          <label className="space-y-3">
+            <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">深度文章提示词</span>
+            <textarea
+              className="min-h-48 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm leading-7 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              onChange={(event) => setPromptDraft((current) => ({ ...current, outputArticlePrompt: event.target.value }))}
+              value={promptDraft.outputArticlePrompt}
+            />
+          </label>
+        </div>
+
+        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+          <label className="space-y-3">
+            <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">公众号 HTML 排版提示词</span>
+            <textarea
+              className="min-h-44 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm leading-7 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+              onChange={(event) => setPromptDraft((current) => ({ ...current, outputWechatHtmlPrompt: event.target.value }))}
+              value={promptDraft.outputWechatHtmlPrompt}
+            />
+            <p className="text-xs leading-6 text-on-surface-variant">来自本地公众号排版 skill 的约束：微信编辑器友好、内联样式、不渲染 H1。</p>
+          </label>
+
+          <div className="grid gap-4">
+            <label className="space-y-3">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">生图提示词模板</span>
+              <textarea
+                className="min-h-28 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm leading-7 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                onChange={(event) => setPromptDraft((current) => ({ ...current, outputImagePrompt: event.target.value }))}
+                value={promptDraft.outputImagePrompt}
+              />
+            </label>
+            <label className="space-y-3">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">生视频提示词模板</span>
+              <textarea
+                className="min-h-28 w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm leading-7 text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                onChange={(event) => setPromptDraft((current) => ({ ...current, outputVideoPrompt: event.target.value }))}
+                value={promptDraft.outputVideoPrompt}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+          <section className="rounded-lg border border-outline-variant/16 bg-surface px-4 py-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">生图 API</p>
+            <div className="mt-4 grid gap-4">
+              <input className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" onChange={(event) => setPromptDraft((current) => ({ ...current, imageApiBaseUrl: event.target.value }))} placeholder="接口 URL；不填则只生成提示词" value={promptDraft.imageApiBaseUrl} />
+              <input className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" onChange={(event) => setPromptDraft((current) => ({ ...current, imageApiModel: event.target.value }))} placeholder="模型名" value={promptDraft.imageApiModel} />
+              <input className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" onChange={(event) => setPromptDraft((current) => ({ ...current, imageApiKey: event.target.value }))} placeholder="API Key，保存后本地隐藏存储" type="password" value={promptDraft.imageApiKey} />
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-outline-variant/16 bg-surface px-4 py-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">生视频 API</p>
+            <div className="mt-4 grid gap-4">
+              <input className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" onChange={(event) => setPromptDraft((current) => ({ ...current, videoApiBaseUrl: event.target.value }))} placeholder="接口 URL；不填则只生成提示词" value={promptDraft.videoApiBaseUrl} />
+              <input className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" onChange={(event) => setPromptDraft((current) => ({ ...current, videoApiModel: event.target.value }))} placeholder="模型名" value={promptDraft.videoApiModel} />
+              <input className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" onChange={(event) => setPromptDraft((current) => ({ ...current, videoApiKey: event.target.value }))} placeholder="API Key，保存后本地隐藏存储" type="password" value={promptDraft.videoApiKey} />
+            </div>
+          </section>
+        </div>
+
         <div className="mt-5 flex flex-wrap gap-3">
           <button
             className="rounded-lg border border-outline-variant/20 px-4 py-2 text-sm font-bold text-on-surface-variant hover:border-primary/25 hover:text-primary"
@@ -502,6 +618,24 @@ export function SettingsView({
                   '只保留信息密度高的事实、判断、结构和行动线索。删除套话、过渡句、空泛形容、重复背景。摘要必须适合回看、标注和写入知识库。',
                 structurePrompt:
                   '结构图必须表达文章自身的论证推进、层级关系、因果链或并列关系。不要画“原文到摘要”的通用流程图，节点必须来自当前条目的真实内容。',
+                outputWechatPrompt:
+                  '基于多篇脱水素材聚合成一篇公众号长文。要有明确主张、真实论据链、可读的段落推进，不要堆摘要，不要营销腔。适合知识型读者和产品/技术/心理学交叉读者。',
+                outputXhsPrompt:
+                  '基于素材生成小红书笔记。标题要有反差或问题感，正文要场景化、口语但不空泛，给出极简方法论，结尾留一个讨论问题。不要夸张承诺，不要伪造个人经历。',
+                outputArticlePrompt:
+                  '基于素材生成一篇通用深度文章。强调问题意识、概念澄清、结构化论证和行动启发。保留事实边界，不把不同文章的观点硬揉成同一个结论。',
+                outputWechatHtmlPrompt:
+                  '把公众号正文排成可粘贴到微信编辑器的 HTML。不要渲染 H1 标题；使用内联样式；用导语块、分节标题、重点卡片、引用块增强阅读节奏；避免花哨动效和外链 CSS。',
+                outputImagePrompt:
+                  '为聚合文章生成封面/配图提示词。中文文字要少，画面要表达核心隐喻；优先 16:9 公众号封面和 3:4 小红书封面；风格克制、信息清楚。',
+                outputVideoPrompt:
+                  '为聚合文章生成短视频脚本或生视频提示词。用 5-7 个镜头表达问题、冲突、结构和结论；画面提示要具体，避免抽象空话。',
+                imageApiBaseUrl: '',
+                imageApiKey: '',
+                imageApiModel: '',
+                videoApiBaseUrl: '',
+                videoApiKey: '',
+                videoApiModel: '',
               })
             }
             type="button"
@@ -510,7 +644,9 @@ export function SettingsView({
           </button>
         </div>
       </section>
+      ) : null}
 
+      {activePanel === 'trends' ? (
       <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6">
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -667,7 +803,9 @@ export function SettingsView({
         </div>
         {trendHint ? <p className="mt-4 text-sm leading-7 text-on-surface-variant">{trendHint}</p> : null}
       </section>
+      ) : null}
 
+      {activePanel === 'social' ? (
       <section className="rounded-lg border border-outline-variant/16 bg-surface-container-low p-6">
         <div className="mb-6 flex items-center gap-3">
           <Wrench className="h-5 w-5 text-primary" />
@@ -690,10 +828,41 @@ export function SettingsView({
             </label>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-3">
-            <section className="rounded-lg border border-outline-variant/16 bg-surface-container-lowest p-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">Spider_XHS</p>
-              <div className="mt-4 space-y-4">
+          <div className="rounded-lg border border-primary/14 bg-surface-container-lowest p-4 shadow-[0_12px_24px_rgba(107,60,57,0.035)]">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)] xl:items-start">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary/70">真实浏览器采集器</p>
+                <h4 className="mt-2 text-lg font-bold text-on-surface">公众号验证后，一键把当前页面送到脱水</h4>
+                <p className="mt-2 text-sm leading-7 text-on-surface-variant">
+                  在自己的 Chrome 或 Edge 打开公众号文章，完成验证后点击书签按钮，当前页面正文会发送到本地脱水服务。
+                </p>
+              </div>
+              <div className="rounded-lg border border-outline-variant/14 bg-surface p-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <a
+                    className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(135deg,var(--color-primary),var(--color-primary-container))] px-4 py-3 text-sm font-bold text-on-primary"
+                    href={bookmarklet}
+                  >
+                    发送到脱水
+                  </a>
+                  <textarea
+                    className="min-h-12 flex-1 rounded-lg border border-outline-variant/16 bg-surface-container-lowest px-3 py-2 text-xs text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                    readOnly
+                    value={bookmarklet}
+                  />
+                </div>
+                <p className="mt-2 text-xs leading-6 text-on-surface-variant">拖到书签栏；拖不了就复制脚本，新建书签并粘贴到网址栏。</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-5 2xl:grid-cols-3">
+            <section className="overflow-hidden rounded-lg border border-outline-variant/16 bg-surface-container-lowest shadow-[0_12px_24px_rgba(107,60,57,0.03)]">
+              <div className="border-b border-outline-variant/12 bg-[linear-gradient(135deg,rgba(248,91,134,0.16),rgba(245,150,135,0.13))] px-4 py-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#9a354d]/70">Spider_XHS</p>
+                <h4 className="mt-1 text-lg font-bold text-on-surface">小红书登录态</h4>
+              </div>
+              <div className="space-y-4 p-4">
                 <label className="space-y-2">
                   <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">根目录</span>
                   <input
@@ -766,9 +935,12 @@ export function SettingsView({
               </div>
             </section>
 
-            <section className="rounded-lg border border-outline-variant/16 bg-surface-container-lowest p-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">DouYin_Spider</p>
-              <div className="mt-4 space-y-4">
+            <section className="overflow-hidden rounded-lg border border-outline-variant/16 bg-surface-container-lowest shadow-[0_12px_24px_rgba(107,60,57,0.03)]">
+              <div className="border-b border-outline-variant/12 bg-[linear-gradient(135deg,rgba(25,25,31,0.1),rgba(116,103,218,0.16))] px-4 py-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#3f397a]/70">DouYin_Spider</p>
+                <h4 className="mt-1 text-lg font-bold text-on-surface">抖音登录态</h4>
+              </div>
+              <div className="space-y-4 p-4">
                 <label className="space-y-2">
                   <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">根目录</span>
                   <input
@@ -901,9 +1073,13 @@ export function SettingsView({
               </div>
             </section>
 
-            <section className="rounded-lg border border-outline-variant/16 bg-surface-container-lowest p-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">wechat_spider</p>
-              <div className="mt-4 space-y-4">
+            <section className="overflow-hidden rounded-lg border border-outline-variant/16 bg-surface-container-lowest shadow-[0_12px_24px_rgba(107,60,57,0.03)]">
+              <div className="border-b border-outline-variant/12 bg-[linear-gradient(135deg,rgba(38,113,65,0.14),rgba(103,170,101,0.16))] px-4 py-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#28613b]/70">wechat_spider</p>
+                <h4 className="mt-1 text-lg font-bold text-on-surface">公众号登录态</h4>
+              </div>
+              <div className="space-y-4 p-4">
+
                 <label className="space-y-2">
                   <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">根目录</span>
                   <input
@@ -1184,7 +1360,9 @@ export function SettingsView({
         </div>
         {socialHint ? <p className="mt-4 text-sm leading-7 text-on-surface-variant">{socialHint}</p> : null}
       </section>
+      ) : null}
 
+      {activePanel === 'basic' ? (
       <section className="overflow-hidden rounded-lg border border-outline-variant/16 bg-surface">
         {draft ? (
           <>
@@ -1392,6 +1570,7 @@ export function SettingsView({
           <div className="px-6 py-16 text-center text-on-surface-variant">还没有可编辑的配置，先新建一组接口设置。</div>
         )}
       </section>
+      ) : null}
     </div>
   );
 }

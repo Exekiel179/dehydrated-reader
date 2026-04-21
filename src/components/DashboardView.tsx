@@ -3,11 +3,15 @@ import {
   ArrowUpRight,
   BookOpenText,
   Bolt,
+  Brain,
   CheckCircle2,
+  Clock3,
   Droplets,
   FileText,
   Globe,
   History,
+  Layers3,
+  LoaderCircle,
   PlayCircle,
   Search,
   Sparkles,
@@ -15,13 +19,14 @@ import {
   Upload,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Analysis, HydrationSnapshot, SourceEstimateResponse, User } from '@/src/types';
+import { Analysis, HydrationSnapshot, InterestProfileResponse, SourceEstimateResponse, User } from '@/src/types';
 import { cn } from '@/src/lib/utils';
 
 interface DashboardProps {
   user: User;
   recentAnalyses: Analysis[];
   onEstimateSource: (url: string) => Promise<SourceEstimateResponse>;
+  onGenerateInterestProfile: (analyses: Analysis[]) => Promise<InterestProfileResponse>;
   onSelectAnalysis: (id: string) => void;
   queueItems: Array<{
     id: string;
@@ -190,10 +195,10 @@ function DehydrationProcessPanel({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className="grid gap-5 rounded-lg border border-primary/14 bg-surface-container-lowest/95 p-5 shadow-[0_18px_36px_rgba(107,60,57,0.08)] lg:grid-cols-[220px_minmax(0,1fr)]"
+      className="grid gap-4 rounded-lg border border-primary/14 bg-surface-container-lowest/95 p-4 shadow-[0_18px_36px_rgba(107,60,57,0.08)] xl:grid-cols-[170px_minmax(0,1fr)]"
     >
-      <div className="flex flex-col items-center justify-center gap-4 border-b border-outline-variant/12 pb-5 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-5">
-        <div className="relative flex h-40 w-28 items-center justify-center overflow-hidden rounded-[2rem] border border-primary/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(246,241,240,0.98))]">
+      <div className="flex items-center gap-4 border-b border-outline-variant/12 pb-4 xl:flex-col xl:justify-center xl:border-b-0 xl:border-r xl:pb-0 xl:pr-4">
+        <div className="relative flex h-28 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.5rem] border border-primary/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(246,241,240,0.98))]">
           <motion.div
             animate={{ height: `${displayedWaterLevel}%` }}
             transition={{ duration: 0.85, ease: 'easeInOut' }}
@@ -205,15 +210,15 @@ function DehydrationProcessPanel({
             className="absolute inset-x-2 bottom-7 h-6 rounded-full bg-white/24 blur-sm"
           />
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-primary">含水量</span>
-            <span className="mt-2 font-headline text-4xl font-bold text-on-primary">{displayedWaterLevel}%</span>
+            <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-on-primary">含水量</span>
+            <span className="mt-1 font-headline text-3xl font-bold text-on-primary">{displayedWaterLevel}%</span>
           </div>
         </div>
-        <div className="text-center">
+        <div className="min-w-0 text-left xl:text-center">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">
             {preview?.title ? preview.title.slice(0, 32) : '准备读取来源'}
           </p>
-          <p className="mt-2 text-sm text-on-surface-variant">
+          <p className="mt-2 text-sm leading-6 text-on-surface-variant">
             {workingAfter
               ? `水分下降 ${finalHydration?.waterDropPercent ?? 0}% ，正文压缩 ${finalHydration?.compressionPercent ?? 0}%`
               : '先评估原文，再把冗余和重复挤出去。'}
@@ -221,13 +226,13 @@ function DehydrationProcessPanel({
         </div>
       </div>
 
-      <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
+      <div className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-2">
           <HydrationStatCard label="脱水前估算" snapshot={workingBefore} pending={!workingBefore} />
           <HydrationStatCard label="脱水后估算" snapshot={workingAfter} pending={!workingAfter} />
         </div>
 
-        <div className="space-y-3">
+        <div className="grid gap-2 md:grid-cols-5">
           {PROCESS_STEPS.map((step, index) => {
             const Icon = step.icon;
             const completed = Boolean(workingAfter) ? index <= stepIndex : index < stepIndex;
@@ -237,7 +242,7 @@ function DehydrationProcessPanel({
               <div
                 key={step.title}
                 className={cn(
-                  'flex items-start gap-3 rounded-lg border px-4 py-3 transition-colors',
+                  'flex min-h-[84px] flex-col gap-2 rounded-lg border px-3 py-3 transition-colors',
                   completed
                     ? 'border-primary/16 bg-primary/6'
                     : active
@@ -247,7 +252,7 @@ function DehydrationProcessPanel({
               >
                 <div
                   className={cn(
-                    'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
                     completed ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'
                   )}
                 >
@@ -259,7 +264,7 @@ function DehydrationProcessPanel({
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-on-surface">{step.title}</p>
-                  <p className="mt-1 text-sm leading-6 text-on-surface-variant">{step.description}</p>
+                  <p className="mt-1 hidden text-xs leading-5 text-on-surface-variant 2xl:block">{step.description}</p>
                 </div>
               </div>
             );
@@ -270,7 +275,126 @@ function DehydrationProcessPanel({
   );
 }
 
-export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelectAnalysis, onCreateAnalysis, queueItems }: DashboardProps) {
+const HORIZONTAL_ANIMATION_STEPS = [
+  { title: '吸入来源', caption: '链接、PDF、视频进入队列', Icon: Globe },
+  { title: '滤掉水分', caption: '噪音、套话、重复被挤出', Icon: Droplets },
+  { title: '压成结构', caption: '段落变成论点和证据链', Icon: Layers3 },
+  { title: '留下判断', caption: '摘要、标签、图谱准备入库', Icon: Sparkles },
+];
+
+function HorizontalDehydrationAnimation({ active }: { active: boolean }) {
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-outline-variant/14 bg-surface-container-lowest p-4 shadow-[0_16px_32px_rgba(107,60,57,0.045)]">
+      <div className="grid gap-4 md:grid-cols-[170px_minmax(0,1fr)]">
+        <div className="relative flex min-h-[220px] flex-col items-center justify-center rounded-lg border border-primary/12 bg-surface">
+          <div className="relative flex h-32 w-24 items-center justify-center overflow-hidden rounded-[1.6rem] border border-primary/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(246,241,240,0.98))]">
+            <motion.div
+              className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-primary via-primary/80 to-primary-container/70"
+              animate={{ height: active ? '32%' : '68%' }}
+              transition={{ duration: active ? 5.6 : 0.8, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="absolute inset-x-3 bottom-9 h-7 rounded-full bg-white/24 blur-sm"
+              animate={{ opacity: active ? 0.18 : 0.28 }}
+              transition={{ duration: 1.2, ease: 'easeOut' }}
+            />
+            <span className="relative z-10 font-headline text-3xl font-bold text-on-primary">{active ? '脱水' : '水分'}</span>
+          </div>
+          <p className="mt-4 text-sm font-bold text-primary">把水挤出去</p>
+          <p className="mt-2 max-w-[120px] text-center text-xs leading-5 text-on-surface-variant">左侧是含水量，右侧是处理步骤。</p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+        {HORIZONTAL_ANIMATION_STEPS.map((step, index) => {
+          const Icon = step.Icon;
+          return (
+            <div key={step.title} className="relative min-h-[104px] overflow-hidden rounded-lg border border-outline-variant/12 bg-surface px-4 py-4">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-on-primary">{index + 1}</span>
+                <Icon className="h-5 w-5 text-primary/75" />
+              </div>
+              <p className="font-headline text-lg font-bold text-on-surface">{step.title}</p>
+              <p className="mt-2 text-xs leading-5 text-on-surface-variant">{step.caption}</p>
+              <motion.div
+                className="absolute bottom-3 left-4 h-2 rounded-full bg-[linear-gradient(90deg,var(--color-primary),var(--color-primary-container),transparent)]"
+                animate={{ width: active ? `${36 + index * 14}%` : '22%' }}
+                transition={{ duration: active ? 2.8 + index * 0.35 : 0.8, ease: 'easeOut' }}
+              />
+            </div>
+          );
+        })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InterestProfileCard({
+  profile,
+  loading,
+  error,
+  disabled,
+  onGenerate,
+}: {
+  profile: InterestProfileResponse | null;
+  loading: boolean;
+  error: string | null;
+  disabled: boolean;
+  onGenerate: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-outline-variant/14 bg-surface-container-lowest p-4">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/48">兴趣画像</p>
+          <h4 className="mt-1 font-headline text-lg font-bold text-on-surface">{profile?.title || '等待生成'}</h4>
+        </div>
+        <button
+          className="inline-flex items-center gap-2 rounded-lg border border-primary/18 px-3 py-2 text-xs font-bold text-primary transition-colors hover:bg-primary/8 disabled:cursor-wait disabled:opacity-60"
+          disabled={loading || disabled}
+          onClick={onGenerate}
+          type="button"
+        >
+          {loading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+          {profile ? '重新生成' : 'AI 生成'}
+        </button>
+      </div>
+
+      {profile ? (
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-on-surface-variant">{profile.summary}</p>
+          <div className="flex flex-wrap gap-2">
+            {profile.focusAreas.map((area) => (
+              <span key={area} className="rounded-full bg-primary/8 px-2.5 py-1 text-[11px] font-bold text-primary">
+                {area}
+              </span>
+            ))}
+          </div>
+          <div className="grid gap-2">
+            {profile.traits.slice(0, 3).map((trait) => (
+              <div key={trait.label} className="rounded-lg border border-outline-variant/12 bg-surface px-3 py-2">
+                <p className="text-sm font-bold text-on-surface">{trait.label}</p>
+                <p className="mt-1 text-xs leading-5 text-on-surface-variant">{trait.evidence}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-start gap-2 rounded-lg bg-surface-container-low px-3 py-3 text-xs leading-5 text-on-surface-variant">
+            <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <span>{profile.readingRhythm}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-outline-variant/18 bg-surface px-4 py-5 text-sm leading-6 text-on-surface-variant">
+          点击后用当前脱水记录生成一次画像。之后不会自动刷新，除非再次点击。
+        </div>
+      )}
+
+      {error ? <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p> : null}
+    </div>
+  );
+}
+
+export function DashboardView({ user, recentAnalyses, onEstimateSource, onGenerateInterestProfile, onSelectAnalysis, onCreateAnalysis, queueItems }: DashboardProps) {
   const [sourceInput, setSourceInput] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [message, setMessage] = useState('粘贴链接或拖入文档，立即生成一条新的脱水任务。');
@@ -282,6 +406,9 @@ export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelect
   const [processStep, setProcessStep] = useState(0);
   const [processPreview, setProcessPreview] = useState<SourceEstimateResponse | null>(null);
   const [processHydration, setProcessHydration] = useState<Analysis['hydration'] | null>(null);
+  const [interestProfile, setInterestProfile] = useState<InterestProfileResponse | null>(null);
+  const [interestProfileLoading, setInterestProfileLoading] = useState(false);
+  const [interestProfileError, setInterestProfileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
 
@@ -413,32 +540,56 @@ export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelect
     }
   };
 
+  const generateProfile = async () => {
+    if (!recentAnalyses.length) {
+      setInterestProfileError('先生成几份脱水结果，再生成兴趣画像。');
+      return;
+    }
+    try {
+      setInterestProfileLoading(true);
+      setInterestProfileError(null);
+      const profile = await onGenerateInterestProfile(recentAnalyses);
+      if (mountedRef.current) {
+        setInterestProfile(profile);
+      }
+    } catch (error) {
+      if (mountedRef.current) {
+        setInterestProfileError(error instanceof Error ? error.message : '兴趣画像生成失败。');
+      }
+    } finally {
+      if (mountedRef.current) {
+        setInterestProfileLoading(false);
+      }
+    }
+  };
+
   return (
     <div className="mx-auto flex max-w-screen-2xl flex-col gap-8 px-4 py-6 md:px-6 md:py-8 lg:px-10">
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.9fr)]">
-        <div
-          className={cn(
-            'relative overflow-hidden rounded-lg border border-outline-variant/14 bg-surface-container-low px-6 py-7 shadow-[0_20px_40px_rgba(107,60,57,0.06)] md:px-8 md:py-8',
-            dragActive && 'border-primary/35 bg-[color:rgba(250,240,238,0.96)]'
-          )}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={(event) => {
-            event.preventDefault();
-            setDragActive(false);
-          }}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragActive(false);
-            submitFiles(event.dataTransfer.files);
-          }}
-        >
+        <div className="space-y-5">
+          <div
+            className={cn(
+              'relative overflow-hidden rounded-lg border border-outline-variant/14 bg-surface-container-low px-6 py-7 shadow-[0_20px_40px_rgba(107,60,57,0.06)] md:px-8 md:py-8',
+              dragActive && 'border-primary/35 bg-[color:rgba(250,240,238,0.96)]'
+            )}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+              submitFiles(event.dataTransfer.files);
+            }}
+          >
           <div
             className="absolute inset-x-0 top-0 h-px"
             style={{ backgroundImage: 'linear-gradient(90deg, transparent, color-mix(in oklab, var(--color-primary) 50%, transparent), transparent)' }}
@@ -454,7 +605,7 @@ export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelect
               </div>
               <div className="max-w-2xl space-y-3">
                 <h1 className="font-headline text-3xl font-bold leading-tight text-primary md:text-4xl">
-                  长链接、论文 PDF、课程视频，一键脱水。
+                  长文链接、论文 PDF、课程视频，一键脱水。
                 </h1>
               </div>
               <form
@@ -550,7 +701,7 @@ export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelect
                     正在处理：{processingQueueItem.source}
                   </div>
                 ) : null}
-                {pendingQueueItems.length ? (
+              {pendingQueueItems.length ? (
                   <div className="mt-3 space-y-2">
                     {pendingQueueItems.slice(0, 3).map((item, index) => (
                       <div key={item.id} className="rounded-lg border border-outline-variant/12 bg-surface px-3 py-2 text-sm text-on-surface-variant">
@@ -561,12 +712,6 @@ export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelect
                 ) : null}
               </div>
 
-              <DehydrationProcessPanel
-                visible={processVisible}
-                stepIndex={processStep}
-                preview={processPreview}
-                finalHydration={processHydration}
-              />
             </div>
 
             <div className="grid gap-4 border-t border-outline-variant/14 pt-5 md:grid-cols-[auto_auto_1fr] md:items-center">
@@ -593,6 +738,9 @@ export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelect
             ref={fileInputRef}
             type="file"
           />
+          </div>
+
+          <HorizontalDehydrationAnimation active={isSubmitting || processVisible || queueItems.length > 0} />
         </div>
 
         <div className="flex flex-col rounded-lg border border-outline-variant/14 bg-surface px-6 py-6 shadow-[0_18px_32px_rgba(107,60,57,0.04)]">
@@ -641,6 +789,13 @@ export function DashboardView({ user, recentAnalyses, onEstimateSource, onSelect
                 <TrendingUp className="h-8 w-8 text-primary/55" />
               </div>
             </div>
+            <InterestProfileCard
+              disabled={!recentAnalyses.length}
+              error={interestProfileError}
+              loading={interestProfileLoading}
+              onGenerate={() => void generateProfile()}
+              profile={interestProfile}
+            />
           </div>
           <button className="mt-6 w-full rounded-lg border border-primary/18 py-3 text-sm font-bold text-primary transition-colors hover:bg-surface-container-low" type="button">
             查看统计

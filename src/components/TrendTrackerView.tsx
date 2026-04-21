@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Copy, EyeOff, Flame, LoaderCircle, Radar, Search } from 'lucide-react';
 import type { TrendOverviewResponse, TrendTopic } from '@/src/types';
-import { refreshTrendOverview } from '@/src/lib/api';
+import { fetchTrendOverview, refreshTrendOverview } from '@/src/lib/api';
 
 interface TrendTrackerViewProps {
   onDehydrateUrl: (url: string) => Promise<void>;
@@ -32,19 +32,19 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
   useEffect(() => {
     let cancelled = false;
 
-    async function startRadar() {
+    async function loadOverview() {
       setOverviewLoading(true);
       setOverviewError(null);
-      setRefreshHint('正在启动 TrendRadar 搜索雷达...');
+      setRefreshHint('正在读取最近一次 TrendRadar 结果。');
       try {
-        const result = await refreshTrendOverview();
+        const result = await fetchTrendOverview();
         if (!cancelled) {
-          setOverview(result.overview);
-          setRefreshHint(result.message);
+          setOverview(result);
+          setRefreshHint(`已读取最近一次结果：${result.snapshotLabel}。需要新数据时手动点击“重新扫描”。`);
         }
       } catch (error) {
         if (!cancelled) {
-          setOverviewError(error instanceof Error ? error.message : '热点雷达启动失败。');
+          setOverviewError(error instanceof Error ? error.message : '热点雷达读取失败。');
         }
       } finally {
         if (!cancelled) {
@@ -53,7 +53,7 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
       }
     }
 
-    void startRadar();
+    void loadOverview();
     return () => {
       cancelled = true;
     };
@@ -92,7 +92,7 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-on-surface">热点雷达</h1>
           <p className="mt-3 max-w-3xl text-sm text-on-surface-variant">
-            打开页面会先启动 TrendRadar 采集，再把本轮热榜和持续上榜主题整理成可筛选列表。
+            打开页面只读取最近一次结果；只有点击“重新扫描”才会启动 TrendRadar 重新采集。
           </p>
         </div>
         <button
@@ -135,7 +135,7 @@ export function TrendTrackerView({ onDehydrateUrl, ignoredTopicIds, onIgnoreTopi
           {overviewLoading ? (
             <div className="flex min-h-64 items-center justify-center text-sm text-on-surface-variant">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-              正在启动 TrendRadar 搜索雷达...
+              正在读取最近一次 TrendRadar 结果...
             </div>
           ) : overviewError ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">{overviewError}</div>

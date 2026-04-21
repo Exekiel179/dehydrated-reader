@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;width:1600px;height:900px;background:#fcf9f8;font-family:Inter,"Microsoft YaHei",Arial,sans-serif;color:#1b1c1b;overflow:hidden}
+  .page{position:relative;width:1600px;height:900px;padding:64px 76px;background:
+    radial-gradient(circle at 58% 8%, rgba(255,178,189,.42), transparent 18%),
+    radial-gradient(circle at 8% 88%, rgba(137,72,84,.12), transparent 20%),
+    #fcf9f8}
+  .grain{position:absolute;inset:0;background-image:radial-gradient(rgba(137,72,84,.14) 1px, transparent 1px);background-size:18px 18px;mask-image:linear-gradient(120deg,transparent 0%,#000 28%,transparent 68%);opacity:.5}
+  .top{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:40px}
+  .eyebrow{font-size:18px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:#8c4b57}
+  h1{margin:18px 0 0;font-size:70px;line-height:1.02;letter-spacing:0;font-weight:900;color:#1b1c1b}
+  .subtitle{margin-top:22px;max-width:720px;font-size:27px;line-height:1.65;color:#514346}
+  .num{font-size:86px;font-weight:900;color:#8c4b57;line-height:.9}
+  .num small{display:block;margin-top:14px;font-size:18px;letter-spacing:.18em;color:#837375}
+  .screen{position:absolute;left:76px;right:76px;bottom:64px;height:512px;border-radius:26px;border:1px solid rgba(131,115,117,.24);background:white;box-shadow:0 30px 80px rgba(137,72,84,.16);overflow:hidden}
+  .screen img{width:100%;height:100%;object-fit:cover;object-position:top left;display:block}
+  .shine{position:absolute;inset:0;background:linear-gradient(100deg,rgba(255,255,255,.28),transparent 35%,transparent 72%,rgba(255,255,255,.18));pointer-events:none}
+  .chips{position:absolute;right:118px;top:282px;display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;max-width:650px}
+  .chips span{padding:12px 18px;border-radius:8px;background:#fff;border:1px solid rgba(131,115,117,.18);box-shadow:0 12px 26px rgba(137,72,84,.08);font-size:20px;font-weight:800;color:#8c4b57}
+  .brand{position:absolute;left:88px;bottom:24px;font-size:16px;font-weight:900;letter-spacing:.24em;color:#8c4b57;opacity:.8}
+</style>
+</head>
+<body>
+  <main class="page">
+    <div class="grain"></div>
+    <section class="top">
+      <div>
+        <div class="eyebrow">脱水 · 产品实机演示</div>
+        <h1>多素材聚合成文</h1>
+        <p class="subtitle">从多篇脱水文章重新组织主线，生成公众号、小红书或深度文章。</p>
+      </div>
+      <div class="num">05<small>REAL UI</small></div>
+    </section>
+    <div class="chips"><span>拖拽选素材</span><span>平台化风格</span><span>配图/视频提示词</span></div>
+    <section class="screen">
+      <img src="file:///F:/Projects/dehydrated-reader/dehydrated-reader/marketing/product-intro/screenshots/05-output.png" />
+      <div class="shine"></div>
+    </section>
+    <div class="brand">DEHYDRATED READER · 2026/4/22 04:00:46</div>
+  </main>
+</body>
+</html>

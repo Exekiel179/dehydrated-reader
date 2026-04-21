@@ -79,6 +79,42 @@ def build_wechat_headers(cookie_string: str) -> dict:
     }
 
 
+def read_wechat_auth_cache(cache_file: str) -> dict:
+    if not cache_file:
+        return {}
+    cache_path = Path(cache_file)
+    if not cache_path.exists():
+        return {}
+    try:
+        with cache_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def get_wechat_cookie_from_cache(cache_file: str) -> str:
+    payload = read_wechat_auth_cache(cache_file)
+    cookie_string = (
+        payload.get("cookieString")
+        or payload.get("cookie_string")
+        or payload.get("cookie")
+        or payload.get("cookies")
+        or ""
+    )
+    if isinstance(cookie_string, list):
+        return "; ".join(
+            f"{item.get('name')}={item.get('value')}"
+            for item in cookie_string
+            if isinstance(item, dict) and item.get("name") and item.get("value")
+        )
+    if isinstance(cookie_string, dict):
+        return "; ".join(f"{key}={value}" for key, value in cookie_string.items() if value)
+    return str(cookie_string or "").strip()
+
+
 def login_wechat(project_root: Path, cache_file: str = "") -> dict:
     os.chdir(project_root)
     sys.path.insert(0, str(project_root))
@@ -119,6 +155,8 @@ def fetch_wechat_article(url: str, headers: dict | None = None, default_title: s
 
     response = requests.get(url, headers=request_headers, timeout=20)
     response.raise_for_status()
+    if re.search(r"访问过于频繁|环境异常|请在微信客户端打开|当前页面无法访问|操作频繁|wappoc_appmsgcaptcha", response.text):
+        raise RuntimeError("公众号文章触发环境验证，需要手动滑动验证后继续抓取。")
     soup = BeautifulSoup(response.text, "lxml")
 
     def text_of(selector: str) -> str:
@@ -143,6 +181,8 @@ def fetch_wechat_article(url: str, headers: dict | None = None, default_title: s
     content_text = content_node.get_text(" ", strip=True) if content_node else ""
     content_text = re.sub(r"\s+", " ", content_text).strip()
     content = content_override.strip() or content_text
+    if not content.strip():
+        raise RuntimeError("公众号文章没有抓取到正文。")
     summary = re.sub(r"\s+", " ", content).strip()[:220] or title
     cover = (
         attr_of("meta[property='og:image']", "content")
@@ -177,6 +217,32 @@ def fetch_wechat_article(url: str, headers: dict | None = None, default_title: s
         },
     }
     return normalize_wechat_item(article)
+
+
+def build_wechat_article_from_spider(url: str, content: str, default_title: str = "", default_author: str = "", published_at: str = "") -> dict:
+    cleaned = re.sub(r"\s+", " ", content).strip()
+    title = default_title.strip()
+    if not title:
+        heading_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+        title = heading_match.group(1).strip() if heading_match else "公众号文章"
+    cover_match = re.search(r"!\[[^\]]*\]\(([^)\s]+)", content)
+    item = {
+        "id": url,
+        "title": title,
+        "url": url,
+        "authorName": default_author or "公众号",
+        "summary": cleaned[:220] or title,
+        "content": content.strip(),
+        "coverImageUrl": cover_match.group(1) if cover_match else "",
+        "tags": ["公众号", "微信文章"],
+        "publishedAt": published_at,
+        "metrics": {
+            "type": "公众号",
+            "contentChars": len(content.strip()),
+            "source": "wechat_spider",
+        },
+    }
+    return normalize_wechat_item(item)
 
 
 def infer_xhs_mode(query: str, requested_mode: str) -> str:
@@ -330,7 +396,9 @@ def run_wechat(project_root: Path, query: str, limit: int, options: dict | None 
     mode = infer_wechat_mode(query, str(options.get("wechatMode") or "auto"))
 
     if mode == "article":
-        headers = build_wechat_headers(wechat_cookie) if wechat_cookie else None
+        cached_cookie = get_wechat_cookie_from_cache(wechat_cache_file)
+        effective_cookie = wechat_cookie or cached_cookie
+        headers = build_wechat_headers(effective_cookie) if effective_cookie else None
         content_from_spider = ""
         try:
             os.chdir(project_root)
@@ -343,16 +411,25 @@ def run_wechat(project_root: Path, query: str, limit: int, options: dict | None 
         except Exception:
             content_from_spider = ""
 
-        item = fetch_wechat_article(
-            query,
-            headers=headers,
-            content_override=content_from_spider,
-        )
+        if content_from_spider.strip():
+            try:
+                item = fetch_wechat_article(
+                    query,
+                    headers=headers,
+                    content_override=content_from_spider,
+                )
+            except Exception:
+                item = build_wechat_article_from_spider(query, content_from_spider)
+        else:
+            item = fetch_wechat_article(
+                query,
+                headers=headers,
+            )
         return {
             "provider": "wechat",
             "query": query,
             "items": [item],
-            "message": "wechat_spider 文章正文抓取完成。",
+            "message": "wechat_spider 文章正文抓取完成。" if content_from_spider.strip() else "公众号文章抓取完成。",
         }
 
     os.chdir(project_root)

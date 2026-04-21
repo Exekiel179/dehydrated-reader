@@ -1,4 +1,5 @@
-import { Bell, Menu, Search, Settings } from 'lucide-react';
+import { Bell, CheckCircle2, Menu, Search, Settings, X } from 'lucide-react';
+import { useState } from 'react';
 import { User, ViewType } from '@/src/types';
 
 interface TopAppBarProps {
@@ -10,6 +11,7 @@ interface TopAppBarProps {
 }
 
 export function TopAppBar({ user, currentView, activeProfileName, onMenuToggle, onSettingsClick }: TopAppBarProps) {
+  const [noticeVisible, setNoticeVisible] = useState(false);
   const viewTitle = {
     dashboard: '仪表盘',
     analysis: '分析页',
@@ -22,6 +24,7 @@ export function TopAppBar({ user, currentView, activeProfileName, onMenuToggle, 
   }[currentView];
 
   return (
+    <>
     <header className="sticky top-0 z-30 flex h-16 items-center border-b border-outline-variant/10 bg-background/92 px-4 backdrop-blur md:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-screen-2xl items-center justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3 md:gap-5">
@@ -55,7 +58,11 @@ export function TopAppBar({ user, currentView, activeProfileName, onMenuToggle, 
 
         <div className="flex items-center gap-2 md:gap-5">
           <div className="flex items-center gap-2">
-            <button className="hidden rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container md:inline-flex" type="button">
+            <button
+              className="hidden rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container md:inline-flex"
+              onClick={() => setNoticeVisible(true)}
+              type="button"
+            >
               <Bell className="h-5 w-5" />
             </button>
             <button className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container" onClick={onSettingsClick} type="button">
@@ -80,5 +87,24 @@ export function TopAppBar({ user, currentView, activeProfileName, onMenuToggle, 
         </div>
       </div>
     </header>
+    {noticeVisible ? (
+      <div className="fixed bottom-6 left-1/2 z-[70] w-[min(92vw,520px)] -translate-x-1/2 rounded-lg border border-primary/16 bg-surface-container-lowest p-4 text-left shadow-[0_20px_48px_rgba(68,44,49,0.18)]">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <CheckCircle2 className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-on-surface">浏览器脱水提醒</p>
+            <p className="mt-1 text-sm leading-6 text-on-surface-variant">
+              在真实浏览器里完成公众号验证后，点击书签栏里的“发送到脱水”，当前页面正文会发送到本地服务并进入脱水队列。
+            </p>
+          </div>
+          <button className="rounded-md p-1 text-on-surface-variant hover:bg-surface-container" onClick={() => setNoticeVisible(false)} type="button">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
