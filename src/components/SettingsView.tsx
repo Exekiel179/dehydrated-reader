@@ -995,8 +995,67 @@ export function SettingsView({
                     打开登录页
                   </button>
                 </div>
+
+                <label className="flex items-start gap-3 rounded-lg border border-outline-variant/16 bg-surface px-4 py-3">
+                  <input
+                    checked={socialDraft.wechatManualVerify}
+                    className="mt-1 h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
+                    onChange={(event) => setSocialDraft((current) => ({ ...current, wechatManualVerify: event.target.checked }))}
+                    type="checkbox"
+                  />
+                  <span>
+                    <span className="block text-sm font-bold text-on-surface">访问受限时打开手动滑动验证</span>
+                    <span className="mt-1 block text-xs leading-6 text-on-surface-variant">
+                      公众号正文抓取失败时，会打开一个可见浏览器窗口。你完成滑动验证后，程序会继续等待正文并自动抽取。
+                    </span>
+                  </span>
+                </label>
               </div>
             </section>
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-lg border border-outline-variant/16 bg-surface-container-lowest p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant/50">Crawl4AI 子网页探索</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_140px_140px]">
+            <label className="flex items-start gap-3 rounded-lg border border-outline-variant/16 bg-surface px-4 py-3">
+              <input
+                checked={socialDraft.crawlSubpages}
+                className="mt-1 h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
+                onChange={(event) => setSocialDraft((current) => ({ ...current, crawlSubpages: event.target.checked }))}
+                type="checkbox"
+              />
+              <span>
+                <span className="block text-sm font-bold text-on-surface">允许沿当前网页继续探索子网页</span>
+                <span className="mt-1 block text-xs leading-6 text-on-surface-variant">
+                  设计目标：从目录页、专题页或文档首页继续抓同域链接，再汇总成一份脱水材料。当前先保存配置，抓取策略后续按这里的深度和页数执行。
+                </span>
+              </span>
+            </label>
+
+            <label className="space-y-2">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">最大深度</span>
+              <input
+                className="w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                max={3}
+                min={1}
+                onChange={(event) => setSocialDraft((current) => ({ ...current, crawlMaxDepth: Number(event.target.value) }))}
+                type="number"
+                value={socialDraft.crawlMaxDepth}
+              />
+            </label>
+
+            <label className="space-y-2">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/60">最大页数</span>
+              <input
+                className="w-full rounded-lg border border-outline-variant/20 bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                max={24}
+                min={1}
+                onChange={(event) => setSocialDraft((current) => ({ ...current, crawlMaxPages: Number(event.target.value) }))}
+                type="number"
+                value={socialDraft.crawlMaxPages}
+              />
+            </label>
           </div>
         </div>
 

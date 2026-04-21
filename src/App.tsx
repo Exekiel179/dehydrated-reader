@@ -51,6 +51,10 @@ const DEFAULT_SOCIAL_CRAWLER_SETTINGS: SocialCrawlerSettings = {
   wechatToken: '',
   wechatCookieString: '',
   wechatCacheFile: 'F:\\Projects\\公众号文章爬虫\\wechat_spider\\wechat_spider\\wechat_cache.json',
+  wechatManualVerify: true,
+  crawlSubpages: false,
+  crawlMaxDepth: 1,
+  crawlMaxPages: 6,
 };
 
 function normalizeUserProfile(user: Partial<typeof currentUser> | null | undefined) {
@@ -75,6 +79,10 @@ function normalizeSocialCrawlerSettings(settings: Partial<SocialCrawlerSettings>
     wechatToken: settings?.wechatToken || '',
     wechatCookieString: settings?.wechatCookieString || '',
     wechatCacheFile: settings?.wechatCacheFile || DEFAULT_SOCIAL_CRAWLER_SETTINGS.wechatCacheFile,
+    wechatManualVerify: settings?.wechatManualVerify !== false,
+    crawlSubpages: Boolean(settings?.crawlSubpages),
+    crawlMaxDepth: Math.max(1, Math.min(3, Number(settings?.crawlMaxDepth || DEFAULT_SOCIAL_CRAWLER_SETTINGS.crawlMaxDepth))),
+    crawlMaxPages: Math.max(1, Math.min(24, Number(settings?.crawlMaxPages || DEFAULT_SOCIAL_CRAWLER_SETTINGS.crawlMaxPages))),
   };
 }
 

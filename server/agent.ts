@@ -35,6 +35,7 @@ const DEFAULT_RERANKER_DTYPE = process.env.RERANKER_DTYPE || 'q8';
 const EMBEDDING_TIMEOUT_MS = Number(process.env.EMBEDDING_TIMEOUT_MS || 8000);
 const SOURCE_CACHE_TTL_MS = Number(process.env.SOURCE_CACHE_TTL_MS || 5 * 60 * 1000);
 const DEFAULT_WECHAT_CACHE_FILE = process.env.WECHAT_CACHE_FILE || 'F:\\Projects\\公众号文章爬虫\\wechat_spider\\wechat_spider\\wechat_cache.json';
+const WECHAT_BROWSER_PROFILE_DIR = path.join(PROJECT_ROOT, '.runtime', 'wechat-browser-profile');
 
 type FetchMethod = DehydrateResponse['meta']['fetchMethod'];
 
@@ -1620,18 +1621,7 @@ function extractWechatPublishTime(html: string) {
   return '';
 }
 
-async function fetchWithWeChat(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
-  const cookieString = await getWechatCookie(settings);
-  const response = await fetch(url, {
-    redirect: 'follow',
-    headers: buildWechatRequestHeaders(cookieString),
-  });
-
-  if (!response.ok) {
-    throw new Error(`公众号文章抓取失败：${response.status} ${response.statusText}`);
-  }
-
-  const html = await response.text();
+function parseWechatHtml(url: string, html: string, cookieString: string): SourceDocument {
   const restricted =
     /访问过于频繁|环境异常|请在微信客户端打开|该内容已被发布者删除|当前页面无法访问/.test(html);
   const dom = new JSDOM(html, { url });
@@ -1665,7 +1655,7 @@ async function fetchWithWeChat(url: string, settings?: SocialCrawlerSettings): P
     throw new Error(
       cookieString
         ? '公众号文章仍然访问受限：当前 cookie 可能已失效，请在设置页重新扫码登录公众号。'
-        : '公众号文章访问受限：请先在设置页完成公众号扫码登录，写回 token/cookie 后再试。'
+      : '公众号文章访问受限：请先在设置页完成公众号扫码登录，写回 token/cookie 后再试。'
     );
   }
 
@@ -1679,6 +1669,96 @@ async function fetchWithWeChat(url: string, settings?: SocialCrawlerSettings): P
     coverImageUrl: artwork.coverImageUrl,
     logoUrl: artwork.logoUrl,
   };
+}
+
+async function fetchWechatWithManualVerification(url: string, cookieString: string): Promise<SourceDocument> {
+  await fs.mkdir(WECHAT_BROWSER_PROFILE_DIR, { recursive: true });
+  let context: Awaited<ReturnType<(typeof import('playwright'))['chromium']['launchPersistentContext']>> | null = null;
+
+  try {
+    const { chromium } = await import('playwright');
+    context = await chromium.launchPersistentContext(WECHAT_BROWSER_PROFILE_DIR, {
+      headless: false,
+      viewport: { width: 1280, height: 900 },
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 MicroMessenger/8.0.49',
+      locale: 'zh-CN',
+    });
+
+    if (cookieString) {
+      const parsedUrl = new URL(url);
+      const cookies = cookieString
+        .split(';')
+        .map((part) => part.trim())
+        .map((part) => {
+          const separatorIndex = part.indexOf('=');
+          if (separatorIndex <= 0) {
+            return null;
+          }
+          return {
+            name: part.slice(0, separatorIndex).trim(),
+            value: part.slice(separatorIndex + 1).trim(),
+            domain: `.${parsedUrl.hostname.replace(/^www\./, '')}`,
+            path: '/',
+          };
+        })
+        .filter((cookie): cookie is { name: string; value: string; domain: string; path: string } => Boolean(cookie?.name));
+      if (cookies.length) {
+        await context.addCookies(cookies);
+      }
+    }
+
+    const page = context.pages()[0] || await context.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.bringToFront();
+
+    const deadline = Date.now() + Number(process.env.WECHAT_MANUAL_VERIFY_TIMEOUT_MS || 180000);
+    let html = await page.content();
+    while (Date.now() < deadline) {
+      const readableLength = await page
+        .locator('#js_content, .rich_media_content')
+        .first()
+        .textContent({ timeout: 1200 })
+        .catch(() => '');
+      html = await page.content();
+      const restricted = /访问过于频繁|环境异常|请在微信客户端打开|当前页面无法访问/.test(html);
+      if (readableLength && readableLength.replace(/\s+/g, '').length >= 80 && !restricted) {
+        return parseWechatHtml(url, html, cookieString);
+      }
+      await page.waitForTimeout(1500);
+    }
+
+    throw new Error('公众号手动验证超时：请在打开的浏览器中完成滑动验证后重试。');
+  } catch (error) {
+    if (error instanceof Error && /Executable doesn't exist|browserType.launchPersistentContext/.test(error.message)) {
+      throw new Error('无法打开手动验证浏览器：请先运行 npx playwright install chromium。');
+    }
+    throw error;
+  } finally {
+    await context?.close().catch(() => undefined);
+  }
+}
+
+async function fetchWithWeChat(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
+  const cookieString = await getWechatCookie(settings);
+  const response = await fetch(url, {
+    redirect: 'follow',
+    headers: buildWechatRequestHeaders(cookieString),
+  });
+
+  if (!response.ok) {
+    throw new Error(`公众号文章抓取失败：${response.status} ${response.statusText}`);
+  }
+
+  const html = await response.text();
+  try {
+    return parseWechatHtml(url, html, cookieString);
+  } catch (error) {
+    if (settings?.wechatManualVerify === false) {
+      throw error;
+    }
+    return fetchWechatWithManualVerification(url, cookieString);
+  }
 }
 
 async function fetchWithCrawl4AI(url: string): Promise<SourceDocument | null> {
@@ -1838,6 +1918,99 @@ async function fetchWithFirecrawl(url: string, profile?: AiProfile | null): Prom
   };
 }
 
+function extractSameOriginLinks(source: SourceDocument, maxLinks: number) {
+  const links = new Set<string>();
+  const patterns = [
+    /\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/g,
+    /\bhttps?:\/\/[^\s<>)"']+/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of source.markdown.matchAll(pattern)) {
+      const raw = (match[1] || match[0] || '').replace(/[),.;]+$/, '');
+      try {
+        const candidate = new URL(raw);
+        const root = new URL(source.url);
+        if (candidate.origin !== root.origin) {
+          continue;
+        }
+        if (candidate.hash) {
+          candidate.hash = '';
+        }
+        if (candidate.toString() !== source.url) {
+          links.add(candidate.toString());
+        }
+      } catch {
+        continue;
+      }
+      if (links.size >= maxLinks) {
+        return Array.from(links);
+      }
+    }
+  }
+
+  return Array.from(links);
+}
+
+async function fetchSubpageDocument(url: string, profile?: AiProfile | null) {
+  const provider = profile?.fetchProvider || 'crawl4ai';
+  try {
+    if (provider === 'firecrawl') {
+      return await fetchWithFirecrawl(url, profile);
+    }
+    if (provider === 'readability') {
+      return await fetchWithReadability(url);
+    }
+    return (await fetchWithCrawl4AI(url)) || (await fetchWithReadability(url));
+  } catch {
+    return null;
+  }
+}
+
+async function expandSourceWithSubpages(source: SourceDocument, profile?: AiProfile | null, settings?: SocialCrawlerSettings) {
+  if (!settings?.crawlSubpages || isWeChatArticleUrl(source.url)) {
+    return source;
+  }
+
+  const maxPages = Math.max(1, Math.min(24, Number(settings.crawlMaxPages || 6)));
+  const maxDepth = Math.max(1, Math.min(3, Number(settings.crawlMaxDepth || 1)));
+  const visited = new Set<string>([source.url]);
+  const queue = extractSameOriginLinks(source, maxPages - 1).map((url) => ({ url, depth: 1 }));
+  const collected: SourceDocument[] = [];
+
+  while (queue.length && collected.length < maxPages - 1) {
+    const next = queue.shift();
+    if (!next || visited.has(next.url) || next.depth > maxDepth) {
+      continue;
+    }
+    visited.add(next.url);
+    const subpage = await fetchSubpageDocument(next.url, profile);
+    if (!subpage?.markdown || subpage.markdown.replace(/\s+/g, '').length < 120) {
+      continue;
+    }
+    collected.push(subpage);
+    if (next.depth < maxDepth && collected.length < maxPages - 1) {
+      extractSameOriginLinks(subpage, maxPages)
+        .filter((url) => !visited.has(url))
+        .forEach((url) => queue.push({ url, depth: next.depth + 1 }));
+    }
+  }
+
+  if (!collected.length) {
+    return source;
+  }
+
+  return {
+    ...source,
+    markdown: [
+      source.markdown,
+      '\n\n# 子网页补充材料',
+      ...collected.map((page, index) => `\n\n## 子网页 ${index + 1}: ${page.title}\n\n来源：${page.url}\n\n${page.markdown}`),
+    ].join('\n'),
+    excerpt: source.excerpt,
+  };
+}
+
 async function fetchSourceDocument(url: string, profile?: AiProfile | null, socialCrawlerSettings?: SocialCrawlerSettings) {
   const methodHint = isWeChatArticleUrl(url) ? 'wechat' : '';
   const cached = readCachedSourceDocument(url, profile, methodHint);
@@ -1855,24 +2028,25 @@ async function fetchSourceDocument(url: string, profile?: AiProfile | null, soci
   }
 
   if (provider === 'firecrawl') {
-    source = await fetchWithFirecrawl(url, profile);
+    source = await expandSourceWithSubpages(await fetchWithFirecrawl(url, profile), profile, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile);
     return source;
   }
 
   if (provider === 'readability') {
-    source = await fetchWithReadability(url);
+    source = await expandSourceWithSubpages(await fetchWithReadability(url), profile, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile);
     return source;
   }
 
   const crawl4aiResult = await fetchWithCrawl4AI(url);
   if (crawl4aiResult?.markdown) {
-    writeCachedSourceDocument(crawl4aiResult, profile);
-    return crawl4aiResult;
+    source = await expandSourceWithSubpages(crawl4aiResult, profile, socialCrawlerSettings);
+    writeCachedSourceDocument(source, profile);
+    return source;
   }
 
-  source = await fetchWithReadability(url);
+  source = await expandSourceWithSubpages(await fetchWithReadability(url), profile, socialCrawlerSettings);
   writeCachedSourceDocument(source, profile);
   return source;
 }

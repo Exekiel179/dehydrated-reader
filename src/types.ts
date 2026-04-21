@@ -94,6 +94,10 @@ export interface SocialCrawlerSettings {
   wechatToken: string;
   wechatCookieString: string;
   wechatCacheFile: string;
+  wechatManualVerify: boolean;
+  crawlSubpages: boolean;
+  crawlMaxDepth: number;
+  crawlMaxPages: number;
 }
 
 export interface PromptSettings {
