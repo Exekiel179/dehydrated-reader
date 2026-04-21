@@ -60,6 +60,7 @@ app.post('/api/dehydrate', async (req, res) => {
         dehydrationLevel: Number(body.options?.dehydrationLevel ?? 60),
       },
       aiProfile: body.aiProfile || null,
+      socialCrawlerSettings: body.socialCrawlerSettings,
     });
 
     res.json(payload);
@@ -77,7 +78,7 @@ app.post('/api/source-estimate', async (req, res) => {
   }
 
   try {
-    const payload = await estimateSourceHydration(url, req.body?.aiProfile || null);
+    const payload = await estimateSourceHydration(url, req.body?.aiProfile || null, req.body?.socialCrawlerSettings);
     res.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : '预估失败。';

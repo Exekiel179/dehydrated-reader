@@ -37,13 +37,13 @@ export async function requestDehydration(payload: DehydrateRequest) {
   return response.json() as Promise<DehydrateResponse>;
 }
 
-export async function estimateSource(url: string, aiProfile?: AiProfile | null) {
+export async function estimateSource(url: string, aiProfile?: AiProfile | null, socialCrawlerSettings?: SocialCrawlerSettings) {
   const response = await fetch(`${API_BASE}/api/source-estimate`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ url, aiProfile }),
+    body: JSON.stringify({ url, aiProfile, socialCrawlerSettings }),
   });
 
   if (!response.ok) {

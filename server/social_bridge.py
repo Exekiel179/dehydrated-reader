@@ -72,7 +72,9 @@ def normalize_wechat_item(item: dict) -> dict:
 def build_wechat_headers(cookie_string: str) -> dict:
     return {
         "cookie": cookie_string,
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 MicroMessenger/8.0.49",
+        "referer": "https://mp.weixin.qq.com/",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.7",
     }
 
 
@@ -107,7 +109,9 @@ def fetch_wechat_article(url: str, headers: dict | None = None, default_title: s
     from bs4 import BeautifulSoup
 
     request_headers = {
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 MicroMessenger/8.0.49",
+        "referer": "https://mp.weixin.qq.com/",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.7",
     }
     if headers:
         request_headers.update(headers)

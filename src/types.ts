@@ -101,6 +101,7 @@ export interface DehydrateRequest {
   url: string;
   options: DehydrateOptions;
   aiProfile?: AiProfile | null;
+  socialCrawlerSettings?: SocialCrawlerSettings;
 }
 
 export interface SourceEstimateResponse {
@@ -109,7 +110,7 @@ export interface SourceEstimateResponse {
   type: Analysis['type'];
   readTime: string;
   hydration: HydrationSnapshot;
-  fetchMethod: 'crawl4ai' | 'firecrawl' | 'readability' | 'yt-dlp';
+  fetchMethod: 'crawl4ai' | 'firecrawl' | 'readability' | 'yt-dlp' | 'wechat';
   coverImageUrl?: string;
   logoUrl?: string;
 }
@@ -117,7 +118,7 @@ export interface SourceEstimateResponse {
 export interface DehydrateResponse {
   analysis: Analysis;
   meta: {
-    fetchMethod: 'crawl4ai' | 'firecrawl' | 'readability' | 'yt-dlp';
+    fetchMethod: 'crawl4ai' | 'firecrawl' | 'readability' | 'yt-dlp' | 'wechat';
     chunkCount: number;
     verificationPerformed: boolean;
     verificationAvailable: boolean;

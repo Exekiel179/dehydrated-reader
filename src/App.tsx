@@ -98,6 +98,7 @@ interface DehydrateQueueJob {
   source: string;
   options: { verifyWithSearch: boolean; saveToKnowledgeBase: boolean; dehydrationLevel: number };
   aiProfile: AiProfile | null;
+  socialCrawlerSettings: SocialCrawlerSettings;
   resolve: (analysis: Analysis) => void;
   reject: (error: unknown) => void;
 }
@@ -418,7 +419,12 @@ export default function App() {
         try {
           const shouldUseRealPipeline = /^https?:\/\//i.test(job.source.trim());
           const entry = shouldUseRealPipeline
-            ? (await requestDehydration({ url: job.source.trim(), options: job.options, aiProfile: job.aiProfile })).analysis
+            ? (await requestDehydration({
+                url: job.source.trim(),
+                options: job.options,
+                aiProfile: job.aiProfile,
+                socialCrawlerSettings: job.socialCrawlerSettings,
+              })).analysis
             : buildAnalysis(job.source, Date.now(), job.options.dehydrationLevel);
 
           setAnalyses((previous) => [entry, ...previous]);
@@ -449,6 +455,7 @@ export default function App() {
           source,
           options,
           aiProfile: activeProfile || null,
+          socialCrawlerSettings,
           resolve,
           reject,
         };
@@ -457,10 +464,10 @@ export default function App() {
         setDehydrateQueue((previous) => [...previous, { id, source, status: 'queued' }]);
         void runDehydrateQueue();
       }),
-    [activeProfile, runDehydrateQueue]
+    [activeProfile, runDehydrateQueue, socialCrawlerSettings]
   );
 
-  const handleEstimateSource = async (url: string) => estimateSource(url, activeProfile);
+  const handleEstimateSource = async (url: string) => estimateSource(url, activeProfile, socialCrawlerSettings);
 
   const handleGenerateStructure = async (id: string) => {
     const target = analyses.find((analysis) => analysis.id === id);
