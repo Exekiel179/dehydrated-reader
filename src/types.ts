@@ -1,4 +1,4 @@
-export type ViewType = 'dashboard' | 'analysis' | 'output-studio' | 'knowledge-base' | 'rss-feed' | 'trend-tracker' | 'social-crawler' | 'settings';
+export type ViewType = 'dashboard' | 'analysis' | 'output-studio' | 'knowledge-base' | 'knowledge-search' | 'rss-feed' | 'trend-tracker' | 'social-crawler' | 'settings';
 export type ColorTheme = 'rose' | 'blue';
 export type AccentPreset = 'theme' | 'jade' | 'berry' | 'cobalt' | 'copper';
 
@@ -293,6 +293,25 @@ export interface DeleteAnalysisResponse {
   ok: boolean;
   deletedId: string;
   knowledgeBaseDeleted: boolean;
+}
+
+export interface KnowledgeSearchHit {
+  id: string;
+  title: string;
+  source: string;
+  sourceUrl?: string;
+  createdAt?: string;
+  score: number;
+  snippet: string;
+  tags: string[];
+  contentPreview: string;
+}
+
+export interface KnowledgeSearchResponse {
+  query: string;
+  hits: KnowledgeSearchHit[];
+  total: number;
+  message: string;
 }
 
 export interface ConnectivityReportItem {

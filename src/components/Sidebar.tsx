@@ -16,6 +16,7 @@ export function Sidebar({ currentView, isOpen, onClose, onNewAnalysis, onViewCha
     { id: 'analysis', label: '分析页', icon: BarChart3 },
     { id: 'output-studio', label: '产出页', icon: FileOutput },
     { id: 'knowledge-base', label: '知识库', icon: Database },
+    { id: 'knowledge-search', label: '知识搜索', icon: Search },
     { id: 'trend-tracker', label: '热点追踪', icon: Radar },
     { id: 'social-crawler', label: '社媒爬虫', icon: Search },
     { id: 'rss-feed', label: 'RSS 订阅', icon: Rss },

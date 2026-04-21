@@ -7,6 +7,7 @@
     "dev": "concurrently -k -n api,web -c magenta,cyan \"npm:dev:server\" \"npm:dev:client\"",
     "dev:client": "vite --port=4300 --host=0.0.0.0",
     "dev:server": "tsx watch server/index.ts",
+    "mcp:knowledge": "tsx server/knowledge_mcp.ts",
     "start:frontend": "powershell -ExecutionPolicy Bypass -File scripts/start-frontend.ps1",
     "build": "vite build",
     "preview": "vite preview",
@@ -22,6 +23,7 @@
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@huggingface/transformers": "^4.1.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
@@ -43,7 +45,8 @@
     "turndown": "^7.2.4",
     "undici": "^8.1.0",
     "vite": "^6.2.0",
-    "yaml": "^2.8.3"
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

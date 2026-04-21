@@ -5,6 +5,7 @@ import type {
   DehydrateRequest,
   DehydrateResponse,
   DeleteAnalysisResponse,
+  KnowledgeSearchResponse,
   RSSFeedsResponse,
   RSSDiscoveryResponse,
   RSSImportResponse,
@@ -102,6 +103,23 @@ export async function deleteAnalysis(id: string) {
   }
 
   return response.json() as Promise<DeleteAnalysisResponse>;
+}
+
+export async function searchKnowledgeBase(payload: { query: string; limit?: number }) {
+  const response = await fetch(`${API_BASE}/api/knowledge/search`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: '知识搜索失败。' })) as { error?: string };
+    throw new Error(error.error || '知识搜索失败。');
+  }
+
+  return response.json() as Promise<KnowledgeSearchResponse>;
 }
 
 export async function fetchRandomAvatar() {

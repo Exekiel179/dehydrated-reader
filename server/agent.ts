@@ -16,6 +16,7 @@ import type {
   DehydrateResponse,
   HydrationReport,
   HydrationSnapshot,
+  KnowledgeSearchResponse,
   PromptSettings,
   SocialCrawlerSettings,
   SourceEstimateResponse,
@@ -91,11 +92,15 @@ interface KnowledgeBaseEntry {
 }
 
 interface KnowledgeHit {
+  id: string;
   title: string;
   source: string;
+  sourceUrl?: string;
+  createdAt?: string;
   score: number;
   snippet: string;
   tags: string[];
+  contentPreview: string;
 }
 
 interface VectorIndexEntry {
@@ -1659,12 +1664,35 @@ async function retrieveKnowledgeHits(query: string, limit = 3): Promise<Knowledg
   return reranked
     .slice(0, limit)
     .map(({ entry, score }) => ({
+      id: getKnowledgeEntryKey(entry),
       title: entry.title || '未命名条目',
       source: entry.source || entry.sourceUrl || '知识库',
+      sourceUrl: entry.sourceUrl,
+      createdAt: entry.createdAt,
       score,
       snippet: extractSnippet(entry, queryTokens),
       tags: entry.tags || [],
+      contentPreview: getKnowledgeEntryText(entry).slice(0, 600),
     }));
+}
+
+export async function searchKnowledgeBase(query: string, limit = 8): Promise<KnowledgeSearchResponse> {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) {
+    throw new Error('请输入搜索关键词。');
+  }
+
+  const safeLimit = Math.max(1, Math.min(20, Number.isFinite(limit) ? Math.floor(limit) : 8));
+  const hits = await retrieveKnowledgeHits(normalizedQuery, safeLimit);
+
+  return {
+    query: normalizedQuery,
+    hits,
+    total: hits.length,
+    message: hits.length
+      ? `命中 ${hits.length} 条本地知识。`
+      : '没有命中本地知识库，试试换一个关键词或先写入更多脱水结果。',
+  };
 }
 
 function serializeKnowledgeHits(hits: KnowledgeHit[]) {

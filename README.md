@@ -24,6 +24,8 @@
 - 向量召回与词项召回混合排序
 - 使用本地 reranker 对候选结果二次重排
 - 检索结果会作为上下文参与当前摘要
+- 提供“知识搜索”可视化页面
+- 提供 MCP stdio 工具：`search_knowledge`
 
 当前还没有的是：
 
@@ -95,6 +97,16 @@ npm run start:frontend
 Windows 下也可以直接双击：
 
 - `start-frontend.bat`
+
+### 6. 启动知识库 MCP
+
+给其他智能体或 MCP 客户端接入本地知识库时，可以启动：
+
+```bash
+npm run mcp:knowledge
+```
+
+这个 MCP 暴露 `search_knowledge` 工具，输入 `query` 和可选 `limit`，返回本地 SQLite + 向量 RAG 的检索结果。
 
 ## 部署说明
 

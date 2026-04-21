@@ -4,6 +4,7 @@ import {
   estimateSourceHydration,
   generateStructureDiagramForAnalysis,
   removeAnalysisFromKnowledgeBase,
+  searchKnowledgeBase,
   testProfileConnectivity,
 } from './agent.ts';
 import {
@@ -117,6 +118,24 @@ app.post('/api/test-profile', async (req, res) => {
     res.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : '联通性测试失败。';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/knowledge/search', async (req, res) => {
+  const query = req.body?.query;
+  const limit = Number(req.body?.limit || 8);
+
+  if (!query || typeof query !== 'string') {
+    res.status(400).json({ error: '缺少搜索关键词。' });
+    return;
+  }
+
+  try {
+    const payload = await searchKnowledgeBase(query, Number.isFinite(limit) ? limit : 8);
+    res.json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '知识搜索失败。';
     res.status(500).json({ error: message });
   }
 });

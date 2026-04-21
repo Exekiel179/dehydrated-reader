@@ -10,6 +10,7 @@ import { OutputStudioView } from './components/OutputStudioView';
 import { PointerParticlesEffect } from './components/PointerParticlesEffect';
 import { RSSFeedView } from './components/RSSFeedView';
 import { KnowledgeBaseView } from './components/KnowledgeBaseView';
+import { KnowledgeSearchView } from './components/KnowledgeSearchView';
 import { TrendTrackerView } from './components/TrendTrackerView';
 import { SocialCrawlerView } from './components/SocialCrawlerView';
 import { deleteAnalysis, estimateSource, generateStructureDiagram, requestDehydration, testProfileConnectivity } from './lib/api';
@@ -673,6 +674,8 @@ export default function App() {
         );
       case 'knowledge-base':
         return <KnowledgeBaseView analyses={analyses} onSelect={handleSelectAnalysis} onDelete={handleDeleteAnalysis} />;
+      case 'knowledge-search':
+        return <KnowledgeSearchView analyses={analyses} onSelectAnalysis={handleSelectAnalysis} />;
       case 'trend-tracker':
         return (
           <TrendTrackerView
