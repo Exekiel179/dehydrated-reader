@@ -8,6 +8,7 @@ import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import TurndownService from 'turndown';
 import { ProxyAgent } from 'undici';
+import { crawlSocialProvider } from './integrations.ts';
 import type {
   AiProfile,
   Analysis,
@@ -18,6 +19,7 @@ import type {
   HydrationSnapshot,
   KnowledgeSearchResponse,
   PromptSettings,
+  SocialCrawlItem,
   SocialCrawlerSettings,
   SourceEstimateResponse,
 } from '../src/types.ts';
@@ -1963,6 +1965,53 @@ async function fetchWithWeChat(url: string, settings?: SocialCrawlerSettings): P
   }
 }
 
+function buildWechatSpiderMarkdown(item: SocialCrawlItem) {
+  const content = (item.content || item.summary || '').trim();
+  return stripMarkdownNoise(
+    [
+      `# ${item.title || '公众号文章'}`,
+      item.authorName ? `来源：${item.authorName}` : '',
+      item.publishedAt ? `发布时间：${item.publishedAt}` : '',
+      content,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  );
+}
+
+async function fetchWithWeChatSpider(url: string, settings?: SocialCrawlerSettings): Promise<SourceDocument> {
+  const payload = await crawlSocialProvider(
+    'wechat',
+    url,
+    1,
+    settings,
+    {
+      wechatMode: 'article',
+      wechatIncludeContent: true,
+      wechatInterval: settings?.wechatRequestIntervalSeconds || 10,
+    }
+  );
+  const item = payload.items[0];
+  if (!item) {
+    throw new Error(payload.message || 'wechat_spider 没有返回公众号文章。');
+  }
+
+  const markdown = buildWechatSpiderMarkdown(item);
+  if (markdown.replace(/\s+/g, '').length < 80) {
+    throw new Error('wechat_spider 返回正文过短，无法可靠脱水。');
+  }
+
+  return {
+    url: item.url || url,
+    title: item.title || '公众号文章',
+    markdown,
+    excerpt: item.summary || markdown.slice(0, 180),
+    fetchMethod: 'wechat',
+    sourceType: 'article',
+    coverImageUrl: item.coverImageUrl,
+  };
+}
+
 async function ensureYtDlpPython() {
   if (process.env.YTDLP_PYTHON?.trim()) {
     return process.env.YTDLP_PYTHON.trim();
@@ -2409,7 +2458,7 @@ async function fetchSourceDocument(url: string, profile?: AiProfile | null, soci
   let source: SourceDocument;
 
   if (isWeChatArticleUrl(url)) {
-    source = await fetchWithWeChat(url, socialCrawlerSettings);
+    source = await fetchWithWeChatSpider(url, socialCrawlerSettings);
     writeCachedSourceDocument(source, profile, 'wechat');
     return source;
   }

@@ -62,6 +62,7 @@ def normalize_wechat_item(item: dict) -> dict:
         "authorName": item.get("authorName") or "未知公众号",
         "authorUrl": item.get("authorUrl") or "",
         "summary": item.get("summary") or item.get("title") or "",
+        "content": item.get("content") or item.get("summary") or "",
         "coverImageUrl": item.get("coverImageUrl") or "",
         "tags": item.get("tags") or ["公众号", "微信文章"],
         "publishedAt": item.get("publishedAt") or "",
@@ -104,7 +105,7 @@ def login_wechat(project_root: Path, cache_file: str = "") -> dict:
     }
 
 
-def fetch_wechat_article(url: str, headers: dict | None = None, default_title: str = "", default_author: str = "", published_at: str = "") -> dict:
+def fetch_wechat_article(url: str, headers: dict | None = None, default_title: str = "", default_author: str = "", published_at: str = "", content_override: str = "") -> dict:
     import requests
     from bs4 import BeautifulSoup
 
@@ -141,7 +142,8 @@ def fetch_wechat_article(url: str, headers: dict | None = None, default_title: s
     content_node = soup.select_one(".rich_media_content") or soup.select_one("#js_content")
     content_text = content_node.get_text(" ", strip=True) if content_node else ""
     content_text = re.sub(r"\s+", " ", content_text).strip()
-    summary = content_text[:220] or title
+    content = content_override.strip() or content_text
+    summary = re.sub(r"\s+", " ", content).strip()[:220] or title
     cover = (
         attr_of("meta[property='og:image']", "content")
         or attr_of("meta[name='twitter:image']", "content")
@@ -165,12 +167,13 @@ def fetch_wechat_article(url: str, headers: dict | None = None, default_title: s
         "url": url,
         "authorName": author_name,
         "summary": summary,
+        "content": content,
         "coverImageUrl": cover,
         "tags": ["公众号", "微信文章"],
         "publishedAt": publish,
         "metrics": {
             "type": "公众号",
-            "contentChars": len(content_text),
+            "contentChars": len(content),
         },
     }
     return normalize_wechat_item(article)
@@ -327,15 +330,29 @@ def run_wechat(project_root: Path, query: str, limit: int, options: dict | None 
     mode = infer_wechat_mode(query, str(options.get("wechatMode") or "auto"))
 
     if mode == "article":
+        headers = build_wechat_headers(wechat_cookie) if wechat_cookie else None
+        content_from_spider = ""
+        try:
+            os.chdir(project_root)
+            sys.path.insert(0, str(project_root))
+            from spider.wechat.utils import get_article_content  # type: ignore
+
+            content_from_spider = get_article_content(query, headers or {})
+            if content_from_spider.startswith(("请求失败", "获取文章内容失败")):
+                content_from_spider = ""
+        except Exception:
+            content_from_spider = ""
+
         item = fetch_wechat_article(
             query,
-            headers=build_wechat_headers(wechat_cookie) if wechat_cookie else None,
+            headers=headers,
+            content_override=content_from_spider,
         )
         return {
             "provider": "wechat",
             "query": query,
             "items": [item],
-            "message": "wechat_spider 直连抓取完成。",
+            "message": "wechat_spider 文章正文抓取完成。",
         }
 
     os.chdir(project_root)

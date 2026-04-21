@@ -291,6 +291,7 @@ export interface SocialCrawlItem {
   authorName: string;
   authorUrl?: string;
   summary: string;
+  content?: string;
   coverImageUrl?: string;
   tags: string[];
   metrics: Record<string, string | number>;
