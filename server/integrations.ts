@@ -12,6 +12,7 @@ import type {
   RSSImportResponse,
   RSSSubscription,
   SocialCrawlResponse,
+  SocialCrawlOptions,
   SocialCrawlerSettings,
   TrendMonitorSettings,
   TrendMonitorSource,
@@ -1207,7 +1208,8 @@ export async function crawlSocialProvider(
   provider: 'xhs' | 'douyin' | 'wechat',
   query: string,
   limit = 6,
-  settings?: SocialCrawlerSettings
+  settings?: SocialCrawlerSettings,
+  options?: SocialCrawlOptions
 ): Promise<SocialCrawlResponse> {
   const scriptPath = path.join(PROJECT_ROOT, 'server', 'social_bridge.py');
   const python = settings?.pythonPath?.trim() || (await ensureSocialBridgePython());
@@ -1247,6 +1249,8 @@ export async function crawlSocialProvider(
         douyinRoot,
         '--wechat-root',
         wechatRoot,
+        '--options-json',
+        JSON.stringify(options || {}),
       ],
       {
         cwd: PROJECT_ROOT,

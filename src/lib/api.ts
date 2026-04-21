@@ -13,6 +13,7 @@ import type {
   PromptSettings,
   RandomAvatarResponse,
   SocialAuthCaptureResponse,
+  SocialCrawlOptions,
   SocialCrawlerSettings,
   SocialCrawlResponse,
   SourceEstimateResponse,
@@ -250,6 +251,7 @@ export async function crawlSocial(payload: {
   query: string;
   limit: number;
   settings?: SocialCrawlerSettings;
+  options?: SocialCrawlOptions;
 }) {
   const response = await fetch(`${API_BASE}/api/social-crawl`, {
     method: 'POST',

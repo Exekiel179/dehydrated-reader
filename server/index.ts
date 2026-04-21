@@ -21,7 +21,7 @@ import {
   refreshTrendRadarOverview,
   saveTrendMonitorSettings,
 } from './integrations.ts';
-import type { AiProfile, Analysis, DehydrateRequest, RSSSubscription, SocialCrawlerSettings, TrendMonitorSettings } from '../src/types.ts';
+import type { AiProfile, Analysis, DehydrateRequest, RSSSubscription, SocialCrawlerSettings, SocialCrawlOptions, TrendMonitorSettings } from '../src/types.ts';
 
 const app = express();
 const port = Number(process.env.PORT || 4310);
@@ -251,6 +251,7 @@ app.post('/api/social-crawl', async (req, res) => {
   const query = req.body?.query;
   const limit = Number(req.body?.limit || 6);
   const settings = req.body?.settings as SocialCrawlerSettings | undefined;
+  const options = req.body?.options as SocialCrawlOptions | undefined;
 
   if (provider !== 'xhs' && provider !== 'douyin' && provider !== 'wechat') {
     res.status(400).json({ error: 'provider 仅支持 xhs、douyin 或 wechat。' });
@@ -263,7 +264,7 @@ app.post('/api/social-crawl', async (req, res) => {
   }
 
   try {
-    const payload = await crawlSocialProvider(provider, query, Number.isFinite(limit) ? limit : 6, settings);
+    const payload = await crawlSocialProvider(provider, query, Number.isFinite(limit) ? limit : 6, settings, options);
     res.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : '社媒爬虫执行失败。';

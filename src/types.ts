@@ -110,6 +110,29 @@ export interface SocialCrawlerSettings {
   proxyStickySession: boolean;
 }
 
+export interface SocialCrawlOptions {
+  xhsMode?: 'auto' | 'note' | 'user' | 'search';
+  xhsSortTypeChoice?: number;
+  xhsNoteType?: number;
+  xhsNoteTime?: number;
+  xhsNoteRange?: number;
+  xhsPosDistance?: number;
+  xhsGeoLatitude?: string;
+  xhsGeoLongitude?: string;
+  douyinMode?: 'auto' | 'work' | 'user' | 'search';
+  douyinSortType?: string;
+  douyinPublishTime?: string;
+  douyinFilterDuration?: string;
+  douyinSearchRange?: string;
+  douyinContentType?: string;
+  wechatMode?: 'auto' | 'article' | 'search' | 'account' | 'batch';
+  wechatPages?: number;
+  wechatDays?: number;
+  wechatIncludeContent?: boolean;
+  wechatInterval?: number;
+  wechatKeywords?: string;
+}
+
 export interface PromptSettings {
   summaryPrompt: string;
   structurePrompt: string;
