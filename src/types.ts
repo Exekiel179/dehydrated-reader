@@ -1,0 +1,269 @@
+export type ViewType = 'dashboard' | 'analysis' | 'output-studio' | 'knowledge-base' | 'rss-feed' | 'trend-tracker' | 'social-crawler' | 'settings';
+export type ColorTheme = 'rose' | 'blue';
+export type AccentPreset = 'theme' | 'jade' | 'berry' | 'cobalt' | 'copper';
+
+export type InterfaceMode = 'anthropic-messages';
+export type FetchProvider = 'crawl4ai' | 'firecrawl' | 'readability';
+
+export interface HydrationSnapshot {
+  waterPercent: number;
+  signalPercent: number;
+  estimatedWaterChars: number;
+  estimatedSignalChars: number;
+  totalChars: number;
+  densityScore: number;
+  label: string;
+}
+
+export interface HydrationReport {
+  before: HydrationSnapshot;
+  after: HydrationSnapshot;
+  waterDropPercent: number;
+  compressionPercent: number;
+  compressionRatio: number;
+}
+
+export interface AnalysisMetrics {
+  sourceReadMinutes: number;
+  summaryReadMinutes: number;
+  timeSavedMinutes: number;
+  keyInsights: number;
+}
+
+export interface Analysis {
+  id: string;
+  title: string;
+  source: string;
+  sourceUrl?: string;
+  readTime: string;
+  tags: string[];
+  content: string;
+  visualSynthesis: {
+    prompt: string;
+    description: string;
+    imageUrl: string;
+  }[];
+  structureDiagram?: {
+    mermaid: string;
+    caption: string;
+  };
+  timestamp: string;
+  status: 'ready' | 'unread' | 'essential';
+  type: 'article' | 'video' | 'book' | 'web';
+  logoUrl?: string;
+  coverImageUrl?: string;
+  hydration?: HydrationReport;
+  dehydrationLevel?: number;
+  metrics?: AnalysisMetrics;
+}
+
+export interface User {
+  name: string;
+  title: string;
+  avatarUrl: string;
+  proficiency: number;
+  timeSaved: string;
+  keyInsights: number;
+}
+
+export interface AiProfile {
+  id: string;
+  name: string;
+  baseUrl: string;
+  interfaceMode: InterfaceMode;
+  model: string;
+  apiKey: string;
+  fetchProvider: FetchProvider;
+  firecrawlBaseUrl: string;
+  firecrawlApiKey: string;
+}
+
+export interface SocialCrawlerSettings {
+  pythonPath: string;
+  xhsRoot: string;
+  xhsCookies: string;
+  douyinRoot: string;
+  douyinCookies: string;
+  douyinLiveCookies: string;
+  wechatRoot: string;
+  wechatToken: string;
+  wechatCookieString: string;
+  wechatCacheFile: string;
+}
+
+export interface DehydrateOptions {
+  verifyWithSearch: boolean;
+  saveToKnowledgeBase: boolean;
+  dehydrationLevel: number;
+}
+
+export interface DehydrateRequest {
+  url: string;
+  options: DehydrateOptions;
+  aiProfile?: AiProfile | null;
+}
+
+export interface SourceEstimateResponse {
+  title: string;
+  sourceUrl: string;
+  type: Analysis['type'];
+  readTime: string;
+  hydration: HydrationSnapshot;
+  fetchMethod: 'crawl4ai' | 'firecrawl' | 'readability' | 'yt-dlp';
+  coverImageUrl?: string;
+  logoUrl?: string;
+}
+
+export interface DehydrateResponse {
+  analysis: Analysis;
+  meta: {
+    fetchMethod: 'crawl4ai' | 'firecrawl' | 'readability' | 'yt-dlp';
+    chunkCount: number;
+    verificationPerformed: boolean;
+    verificationAvailable: boolean;
+    knowledgeBaseSaved: boolean;
+    orchestrationMode?: 'fixed' | 'agentic-rag';
+    ragUsed?: boolean;
+    knowledgeHits?: number;
+    orchestrationTrace?: Array<{
+      tool: string;
+      status: 'planned' | 'completed' | 'skipped' | 'failed';
+      reason: string;
+    }>;
+  };
+}
+
+export interface StructureDiagramResponse {
+  structureDiagram: {
+    mermaid: string;
+    caption: string;
+  };
+}
+
+export interface TrendTopic {
+  id: string;
+  title: string;
+  snapshotUrl?: string;
+  platformId: string;
+  platformName: string;
+  latestRank: number;
+  occurrences: number;
+  latestSnapshot: string;
+  score: number;
+  timeline: Array<{
+    snapshot: string;
+    platformName: string;
+    rank: number;
+  }>;
+}
+
+export interface TrendOverviewResponse {
+  sourceFile: string;
+  snapshotLabel: string;
+  generatedAt: string;
+  platformSummaries: Array<{
+    id: string;
+    name: string;
+    itemCount: number;
+  }>;
+  latestItems: TrendTopic[];
+  trackedTopics: TrendTopic[];
+}
+
+export interface TrendRefreshResponse {
+  overview: TrendOverviewResponse;
+  message: string;
+  stdoutTail: string;
+}
+
+export interface TrendMonitorSource {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
+export interface TrendMonitorSettings {
+  configPath: string;
+  sources: TrendMonitorSource[];
+}
+
+export interface RSSSubscription {
+  id: string;
+  title: string;
+  url: string;
+  siteUrl?: string;
+  category: 'psychology' | 'psychology-journal' | 'ai' | 'ai-product' | 'github' | 'custom';
+  description?: string;
+  coverImageUrl?: string;
+  enabled: boolean;
+  lastFetchedAt?: string;
+  lastError?: string;
+}
+
+export interface RSSFeedItem {
+  id: string;
+  subscriptionId: string;
+  subscriptionTitle: string;
+  subscriptionCategory: RSSSubscription['category'];
+  title: string;
+  url: string;
+  excerpt: string;
+  publishedAt?: string;
+  coverImageUrl?: string;
+  sourceSiteUrl?: string;
+}
+
+export interface RSSImportResponse {
+  subscription: RSSSubscription;
+}
+
+export interface RSSFeedsResponse {
+  subscriptions: RSSSubscription[];
+  items: RSSFeedItem[];
+  fetchedAt: string;
+}
+
+export interface SocialCrawlItem {
+  id: string;
+  title: string;
+  url: string;
+  provider: 'xhs' | 'douyin' | 'wechat';
+  authorName: string;
+  authorUrl?: string;
+  summary: string;
+  coverImageUrl?: string;
+  tags: string[];
+  metrics: Record<string, string | number>;
+  publishedAt?: string;
+}
+
+export interface SocialCrawlResponse {
+  provider: 'xhs' | 'douyin' | 'wechat';
+  query: string;
+  items: SocialCrawlItem[];
+  message: string;
+}
+
+export interface SocialAuthCaptureResponse {
+  provider: 'xhs' | 'douyin' | 'douyin-live' | 'wechat';
+  cookieString?: string;
+  token?: string;
+  cacheFile?: string;
+  message: string;
+}
+
+export interface DeleteAnalysisResponse {
+  ok: boolean;
+  deletedId: string;
+  knowledgeBaseDeleted: boolean;
+}
+
+export interface ConnectivityReportItem {
+  ok: boolean;
+  message: string;
+}
+
+export interface ConnectivityReport {
+  ai: ConnectivityReportItem;
+  fetcher: ConnectivityReportItem;
+}

@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  --color-primary: #894854;
+  --color-primary-container: #a6606c;
+  --color-on-primary: #ffffff;
+
+  --color-secondary: #79555c;
+  --color-secondary-container: #fdced7;
+  --color-on-secondary-container: #79555d;
+
+  --color-tertiary: #3f6446;
+  --color-tertiary-container: #577d5d;
+  --color-on-tertiary-container: #f7fff3;
+
+  --color-background: #fcf9f8;
+  --color-surface: #fcf9f8;
+  --color-surface-container-low: #f6f3f2;
+  --color-surface-container: #f0edec;
+  --color-surface-container-high: #eae7e7;
+  --color-surface-container-lowest: #ffffff;
+
+  --color-on-surface: #1b1c1b;
+  --color-on-surface-variant: #514346;
+
+  --color-outline: #837375;
+  --color-outline-variant: #d5c2c4;
+
+  --particle-hue-base: 338;
+  --particle-hue-span: 16;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-on-surface font-sans antialiased;
+    background-image:
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--color-background) 92%, transparent),
+        color-mix(in oklab, var(--color-background) 92%, transparent)
+      ),
+      radial-gradient(circle at top left, color-mix(in oklab, var(--color-primary) 7%, transparent), transparent 26%),
+      radial-gradient(circle at 82% 18%, color-mix(in oklab, var(--color-primary-container) 5%, transparent), transparent 18%);
+    background-size: auto, auto, auto;
+    background-position: center top, top left, top right;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-primary) 18%, transparent);
+    color: var(--color-on-surface);
+  }
+}
+
+.markdown-content h1 { @apply mt-8 mb-4 first:mt-0 font-headline text-2xl font-extrabold text-on-surface; }
+.markdown-content p { @apply mb-4 text-sm leading-relaxed text-on-surface-variant; }
+.markdown-content blockquote { @apply my-6 border-l-4 border-primary pl-4 italic text-primary; }
+.markdown-content ul { @apply mb-4 ml-5 list-disc space-y-2 text-sm text-on-surface-variant; }
+.markdown-content strong { @apply font-bold text-on-surface; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { @apply bg-background; }
+::-webkit-scrollbar-thumb { @apply rounded-full bg-outline-variant; }
