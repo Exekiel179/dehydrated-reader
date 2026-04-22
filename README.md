@@ -137,28 +137,6 @@ npm run mcp:knowledge
 - `query`
 - `limit`
 
-## 生成商品介绍图
-
-项目内置一套 9 张实机商品介绍图生成脚本：
-
-```bash
-node scripts/generate-product-intro.mjs
-```
-
-输出：
-
-- `marketing/product-intro/screenshots/`
-- `marketing/product-intro/cards/`
-- `marketing/product-intro/index.html`
-
-## 关于加密与商业化
-
-这个仓库是源码共享版本，适合展示、试用和非商用协作。如果你准备把“脱水”作为可售软件，建议采用双版本策略：
-
-- GitHub 版：非商用源码共享，保留品牌、演示和社区反馈入口。
-- 商业版：闭源分发，使用 Electron/Tauri 打包、代码混淆、授权码或账号登录、服务端校验、功能开关和更新通道。
-
-前端代码本身无法真正“加密到不可逆”，只能混淆和提高逆向成本。更可靠的商业保护方式是把关键模型编排、授权校验、高价值提示词、云端同步和多端能力放到服务端，桌面端只保留客户端能力。
 
 ## 作者
 
